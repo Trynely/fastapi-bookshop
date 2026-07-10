@@ -8,18 +8,26 @@ from app.client.api.requests.user.auth import UserAuthorizedREQT
 from app.core.config.shared.redis.pubsub.listen_expired_keys import LISTEN_EXPIRED_KEYS_CHANNEL
 from app.core.config.support.redis.pubsub import schat_channel, schat_user_kick_channel
 from app.core.config.support.redis.keys.schat_active_msg import user_active_msg_chat_key
+from app.core.config.support.redis.keys.schat_manager_lock import SCHAT_MANAGER_LOCK_TTL, schat_manager_lock_key
+from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.core.db.postgres import db_helper
 from app.shared.service.infrastructure.base import json_to_dict, to_json
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
 from app.support.api.responses.websoket import WSMessageTypeEnum, WSMessageActionEnum, WSMessageKeysEnum
 from app.support.exceptions.chat import ChatNotFound
-from app.support.exceptions.manager import ManagerAlreadyAssigned, ManagerNotFound
-from app.support.exceptions.message import TooManySChatMessages
+from app.support.exceptions.manager import (
+    ManagerAlreadyAssigned,
+    ManagerAlreadyConnected,
+    ManagerNotAssigned,
+    ManagerNotFound,
+)
+from app.support.exceptions.message import SChatUserMuted, TooManySChatMessages
 from app.support.servic import ManagerChatService
 from app.support.usecase.close import CloseChatUC
 from app.support.usecase.escalation import ChatEscalationUC
 from app.support.usecase.manager.assign_to_chat import AssignManagerToChatUC
 from app.support.usecase.manager.handle_messages import HandleManagerMessageUC
+from app.support.usecase.manager.leave_chat import ManagerLeaveChatUC
 from app.support.usecase.query_handlers.filter import ChatFilterQH
 from app.support.usecase.query_handlers.manager.filter import ManagerFilterQH
 from app.support.usecase.query_handlers.messages.filter import ChatMessagesFilterQH
@@ -166,12 +174,19 @@ async def support_chat_user_ws(
                         user_id=user_id,
                         user_text=user_text,
                     )
-                except (ChatNotFound, TooManySChatMessages) as err:
+                except ChatNotFound as err:
                     await websocket.close(
                         code=status.WS_1008_POLICY_VIOLATION,
                         reason=err.msg,
                     )
                     break
+                except (TooManySChatMessages, SChatUserMuted) as err:
+                    await websocket.send_text(
+                        to_json({
+                            WSMessageKeysEnum.TYPE: WSMessageTypeEnum.ERROR,
+                            "data": err.msg,
+                        })
+                    )
 
     except WebSocketDisconnect:
         pass
@@ -189,46 +204,65 @@ async def support_chat_manager_ws(
     chat_id: int,
     websocket: WebSocket,
     redis_pubsub: FromDishka[RedisPubsub],
+    redis_keyspace: FromDishka[RedisClient],
     container: FromDishka[AsyncContainer],
 ):
     auth_manager = await auth_user_ws(websocket)
     manager_id = int(auth_manager.sub)
 
+    manager_session_id = str(uuid.uuid4())
+    manager_lock_key = schat_manager_lock_key(chat_id)
+
     await websocket.accept()
 
-    async with container() as request_container:
-        assign_manager_to_chat_uc = await request_container.get(AssignManagerToChatUC)
-        
-        try:
-            await assign_manager_to_chat_uc.execute(
-                manager_id=manager_id,
-                chat_id=chat_id,
-            )
-        except (ManagerNotFound, ChatNotFound, ManagerAlreadyAssigned) as err:
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason=err.msg
-            )
-            return
+    lock_acquired = await redis_keyspace.string.add(
+        manager_lock_key,
+        manager_session_id,
+        ex=SCHAT_MANAGER_LOCK_TTL,
+        nx=True,
+    )
+    if not lock_acquired:
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason=ManagerAlreadyConnected.msg,
+        )
+        return
 
-    task = asyncio.create_task(write_messages_to_manager_chat(
-        websocket=websocket,
-        schat_channel=schat_channel(chat_id),
-        redis_pubsub=redis_pubsub,
-    ))
-    
+    task = None
     try:
+        async with container() as request_container:
+            assign_manager_to_chat_uc = await request_container.get(AssignManagerToChatUC)
+
+            try:
+                await assign_manager_to_chat_uc.execute(
+                    manager_id=manager_id,
+                    chat_id=chat_id,
+                )
+            except (ManagerNotFound, ChatNotFound, ManagerAlreadyAssigned) as err:
+                await websocket.close(
+                    code=status.WS_1008_POLICY_VIOLATION,
+                    reason=err.msg
+                )
+                return
+
+        task = asyncio.create_task(write_messages_to_manager_chat(
+            websocket=websocket,
+            schat_channel=schat_channel(chat_id),
+            redis_pubsub=redis_pubsub,
+        ))
+
         while True:
             manager_text = await websocket.receive_text()
-            
+
             try:
                 payload = json_to_dict(manager_text)
                 action = payload.get(WSMessageKeysEnum.ACTION, WSMessageTypeEnum.MESSAGE)
             except json.JSONDecodeError:
                 action = WSMessageTypeEnum.MESSAGE
-            
+
             async with container() as request_container:
                 close_chat_uc = await request_container.get(CloseChatUC)
+                manager_leave_chat_uc = await request_container.get(ManagerLeaveChatUC)
                 handle_manager_messages_uc = await request_container.get(HandleManagerMessageUC)
 
                 if action == WSMessageActionEnum.CLOSE:
@@ -239,6 +273,22 @@ async def support_chat_manager_ws(
                             code=status.WS_1008_POLICY_VIOLATION,
                             reason=err.msg
                         )
+
+                    await websocket.close()
+                    break
+
+                elif action == WSMessageActionEnum.LEAVE:
+                    try:
+                        await manager_leave_chat_uc.execute(
+                            manager_id=manager_id,
+                            chat_id=chat_id,
+                        )
+                    except (ChatNotFound, ManagerNotAssigned) as err:
+                        await websocket.close(
+                            code=status.WS_1008_POLICY_VIOLATION,
+                            reason=err.msg,
+                        )
+                        break
 
                     await websocket.close()
                     break
@@ -258,11 +308,18 @@ async def support_chat_manager_ws(
     except WebSocketDisconnect:
         pass
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        lock_owner = await redis_keyspace.string.get(manager_lock_key)
+        if isinstance(lock_owner, bytes):
+            lock_owner = lock_owner.decode()
+        if lock_owner == manager_session_id:
+            await redis_keyspace.key.remove(manager_lock_key)
+
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 from pydantic import BaseModel
