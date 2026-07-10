@@ -55,13 +55,20 @@ async def lifespan(app: FastAPI):
         )
         await elastic_indexes.init()
 
-    # Первичное наполнение поискового индекса (выполняется воркером).
-    # Импорт здесь, а не на уровне модуля: задача импортирует broker,
-    # а broker импортирует модуль задачи — на уровне модуля был бы цикл.
+    # Первичное наполнение индексов (выполняется воркером).
+    # Импорт здесь, а не на уровне модуля: задачи импортируют broker,
+    # а broker импортирует модули задач — на уровне модуля был бы цикл.
     from app.product.service.infrastructure.taskiq.tasks.book.elastic_index import (
         elastic_index_books_task,
     )
+    from app.product.service.infrastructure.taskiq.tasks.book.qdrant_index import (
+        qdrant_index_books_task,
+    )
+    from app.support.infrastructure.taskiq.tasks.faq_index import faq_index_task
+
     await elastic_index_books_task.kiq()
+    await qdrant_index_books_task.kiq()
+    await faq_index_task.kiq()
 
     yield
 

@@ -17,6 +17,7 @@ from app.core.config.base import get_settings
 from app.shared.db.elasticsearch.indexes.initializer import ElasticIndexInitializer
 from app.shared.db.qdrant.collections.intializer import QdrantCollectionInitializer
 from app.shared.service.infrastructure.ollama.embedder import OllamaEmbedder
+from app.support.db.qdrant.collections.faq import FaqQdrantCollection
 from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
 
@@ -100,11 +101,13 @@ class QdrantProvider(Provider):
         self,
         books_collection: BooksQdrantCollection,
         user_reco_profile_collection: UserRecoProfileQdrantCollection,
+        faq_collection: FaqQdrantCollection,
     ) -> QdrantCollectionInitializer:
         return QdrantCollectionInitializer(
             collections=[
                 books_collection,
                 user_reco_profile_collection,
+                faq_collection,
             ]
         )
 

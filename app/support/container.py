@@ -11,6 +11,8 @@ from app.shared.db.qdrant.base_repository import BaseQdrantREPO
 from app.shared.db.postgres.repositories.sqlalchemy.transaction import SQLAlchemyTransaction
 from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
+from app.shared.service.infrastructure.ollama.embedder import OllamaEmbedder
+from app.support.db.qdrant.collections.faq import FaqQdrantCollection
 from app.support.db.sqlalchemy.repositories.chat import ChatSQLAlchemyRepository
 from app.support.db.sqlalchemy.repositories.chat_messages import ChatMsgSQLAlchemyRepository
 from app.support.db.sqlalchemy.repositories.manager import ManagerSQLAlchemyRepository
@@ -92,6 +94,17 @@ class ChatMsgProvider(Provider):
             message_repository=message_repository
         )
     
+    @provide(scope=Scope.APP)
+    def faq_qdrant_collection(
+        self,
+        client: AsyncQdrantClient,
+        embedder: OllamaEmbedder,
+    ) -> FaqQdrantCollection:
+        return FaqQdrantCollection(
+            qdrant_client=client,
+            embedder=embedder,
+        )
+
     @provide
     def faq_qdrant_repository(self, client: AsyncQdrantClient) -> BaseQdrantREPO:
         return BaseQdrantREPO(

@@ -1,9 +1,16 @@
+import logging
 from datetime import datetime
+from typing import Any
+
 from sqladmin import ModelView
 from sqladmin.filters import BooleanFilter
+from starlette.requests import Request
 from app.admin.column_type_formatters import datetime_format
 from app.admin.product.filters import BookCategoryFilter, RatingFilter
 from app.product.db.postgres.models.book import BookModel
+
+logger = logging.getLogger(__name__)
+
 
 class BookAdmin(ModelView, model=BookModel):
     name = "Book"
@@ -101,6 +108,39 @@ class BookAdmin(ModelView, model=BookModel):
     ]
 
     form_include_pk = True
+
+    # --- событийная синхронизация Qdrant/ES ---
+
+    @staticmethod
+    async def _enqueue_book_sync(book_id: int) -> None:
+        # импорт внутри метода: задача импортирует broker,
+        # а broker — модули задач (на уровне модуля был бы цикл)
+        from app.product.service.infrastructure.taskiq.tasks.book.sync_book import (
+            sync_book_task,
+        )
+
+        try:
+            await sync_book_task.kiq(book_id)
+        except Exception:
+            # админка не должна падать из-за недоступного брокера;
+            # cron-переиндексация догонит изменения
+            logger.exception("failed to enqueue sync for book %s", book_id)
+
+    async def after_model_change(
+        self,
+        data: dict,
+        model: Any,
+        is_created: bool,
+        request: Request,
+    ) -> None:
+        await self._enqueue_book_sync(model.id)
+
+    async def after_model_delete(
+        self,
+        model: Any,
+        request: Request,
+    ) -> None:
+        await self._enqueue_book_sync(model.id)
 
     form_ajax_refs = {
         "category": {

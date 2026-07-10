@@ -55,6 +55,13 @@ class BooksElasticREPO:
             actions=actions,
         )
 
+    async def delete_by_id(self, book_id: int) -> None:
+        """Удаляет документ одной книги. 404 (уже нет) — не ошибка."""
+        await self.es_client.options(ignore_status=404).delete(
+            index=self.index_name,
+            id=str(book_id),
+        )
+
     async def delete_missing(self, actual_book_ids: list[int]) -> None:
         """
         Удаляет из индекса документы, которых больше нет в Postgres.

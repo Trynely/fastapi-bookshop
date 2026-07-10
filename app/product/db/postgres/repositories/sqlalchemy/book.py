@@ -236,22 +236,65 @@ class BookSQLAlchemyREPO(BaseSQLAlchemyREPO[BookModel]):
 
         result = await self.session.execute(stmt)
         books = result.scalars().all()
-        
-        return [
-            BooksQdrantPayloadDTO(
-                id=book.id,
-                title=book.title,
-                description=book.description,
-                author_id=book.author_id,
-                author_name=book.author.name,
-                category_id=book.category_id,
-                category_name=book.category.title,
-                issue_year=book.issue_year,
-                rating=float(book.rating),
-                is_available=book.is_available,
+
+        return [self._to_qdrant_payload_dto(book) for book in books]
+
+    @staticmethod
+    def _to_qdrant_payload_dto(book: BookModel) -> BooksQdrantPayloadDTO:
+        return BooksQdrantPayloadDTO(
+            id=book.id,
+            title=book.title,
+            description=book.description,
+            author_id=book.author_id,
+            author_name=book.author.name,
+            category_id=book.category_id,
+            category_name=book.category.title,
+            issue_year=book.issue_year,
+            rating=float(book.rating),
+            is_available=book.is_available,
+        )
+
+    @staticmethod
+    def _to_elastic_document_dto(book: BookModel) -> BookElasticDocumentDTO:
+        return BookElasticDocumentDTO(
+            id=book.id,
+            title=book.title,
+            author_id=book.author_id,
+            author_name=book.author.name,
+            category_id=book.category_id,
+            category_slug=book.category.slug,
+            category_name=book.category.title,
+            country=book.made_in.country if book.made_in else None,
+            issue_year=book.issue_year,
+            rating=float(book.rating),
+            is_available=book.is_available,
+        )
+
+    async def get_book_for_sync(
+        self,
+        book_id: int,
+    ) -> tuple[BooksQdrantPayloadDTO, BookElasticDocumentDTO] | None:
+        """Одна книга для событийной синхронизации Qdrant/ES. None — удалена."""
+        stmt = (
+            select(BookModel)
+            .options(
+                joinedload(BookModel.author),
+                joinedload(BookModel.category),
+                joinedload(BookModel.made_in),
             )
-            for book in books
-        ]
+            .where(BookModel.id == book_id)
+        )
+
+        result = await self.session.execute(stmt)
+        book = result.scalar_one_or_none()
+
+        if book is None:
+            return None
+
+        return (
+            self._to_qdrant_payload_dto(book),
+            self._to_elastic_document_dto(book),
+        )
 
     async def get_books_for_elastic_indexing(self) -> list[BookElasticDocumentDTO]:
         """
@@ -270,22 +313,7 @@ class BookSQLAlchemyREPO(BaseSQLAlchemyREPO[BookModel]):
         result = await self.session.execute(stmt)
         books = result.scalars().all()
 
-        return [
-            BookElasticDocumentDTO(
-                id=book.id,
-                title=book.title,
-                author_id=book.author_id,
-                author_name=book.author.name,
-                category_id=book.category_id,
-                category_slug=book.category.slug,
-                category_name=book.category.title,
-                country=book.made_in.country if book.made_in else None,
-                issue_year=book.issue_year,
-                rating=float(book.rating),
-                is_available=book.is_available,
-            )
-            for book in books
-        ]
+        return [self._to_elastic_document_dto(book) for book in books]
 
     async def get_top_by_category(
         self,

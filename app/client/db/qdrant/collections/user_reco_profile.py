@@ -13,8 +13,8 @@ class UserRecoProfileQdrantCollection(BaseQdrantCollection):
             collection_name=USER_RECO_PROFILE_COLLECTION,
         )
 
-    async def init_collection(self):
-        if not await self.collection_exists():
-            await self.create_collection(
-                VECTOR_SIZE,
-            )
+    @property
+    def vector_size(self) -> int:
+        return VECTOR_SIZE
+
+    # payload-индексы не нужны: фильтрация только по id точек (HasIdCondition)
