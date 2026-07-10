@@ -1,4 +1,4 @@
-from app.core.config.support.redis.cache.user_schat import user_chat_cache_key
+from app.core.config.support.redis.cache.user_schat import chat_schat_cache_key, user_chat_cache_key
 from app.core.config.support.redis.pubsub import schat_channel
 from app.core.config.support.redis.keys.schat_active_msg import user_active_msg_chat_key
 from app.shared.service.infrastructure.base import is_exists
@@ -31,9 +31,13 @@ class CloseChatUC:
 
             close_chat(chat)
             await self._transaction.commit()
+
+            await self.redis_keyspace.key.remove(user_chat_cache_key(user_id))
+            await self.redis_keyspace.key.remove(chat_schat_cache_key(chat.id))
         except ChatNotFound:
-            await self.redis_keyspace.remove(user_chat_cache_key(user_id))
-            await self.redis_keyspace.remove(user_active_msg_chat_key(user_id))
+            await self.redis_keyspace.key.remove(user_chat_cache_key(user_id))
+            await self.redis_keyspace.key.remove(user_active_msg_chat_key(user_id))
+            return
 
         await self.redis_pubsub.publish(schat_channel(chat.id), {
             WSMessageKeysEnum.TYPE: WSMessageTypeEnum.SYSTEM,
@@ -50,9 +54,12 @@ class CloseChatUC:
 
             close_chat(chat)
             await self._transaction.commit()
+
+            await self.redis_keyspace.key.remove(user_chat_cache_key(user_id))
+            await self.redis_keyspace.key.remove(chat_schat_cache_key(chat_id))
         except ChatNotFound:
-            await self.redis_keyspace.remove(user_chat_cache_key(user_id))
-            await self.redis_keyspace.remove(user_active_msg_chat_key(user_id))
+            await self.redis_keyspace.key.remove(chat_schat_cache_key(chat_id))
+            return
 
         await self.redis_pubsub.publish(schat_channel(chat.id), {
             WSMessageKeysEnum.TYPE: WSMessageTypeEnum.SYSTEM,
