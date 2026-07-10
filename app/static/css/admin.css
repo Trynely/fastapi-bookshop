@@ -1,0 +1,614 @@
+/* ============================================================
+   Bookshop Admin — sqladmin / Tabler theme override
+   Matches the storefront design system (indigo → purple).
+   Loaded after Tabler + sqladmin main.css to win on cascade.
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap');
+
+:root,
+body {
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-soft: #eef2ff;
+    --accent: #f59e0b;
+    --danger: #ef4444;
+    --success: #10b981;
+
+    --bg: #f5f6fb;
+    --card-bg: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e6e8f0;
+
+    --radius: 14px;
+    --radius-sm: 10px;
+
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+    --shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 8px 24px rgba(15, 23, 42, .06);
+    --shadow-lg: 0 12px 40px rgba(79, 70, 229, .18);
+
+    --sidebar: #1e1b3a;
+    --sidebar-2: #2a2456;
+
+    /* Tabler variable overrides */
+    --tblr-primary: #4f46e5;
+    --tblr-primary-rgb: 79, 70, 229;
+    --tblr-font-sans-serif: 'Rubik', -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --tblr-body-bg: var(--bg);
+    --tblr-border-radius: var(--radius-sm);
+    --tblr-link-color: #4f46e5;
+    --tblr-link-hover-color: #4338ca;
+}
+
+body {
+    font-family: var(--tblr-font-sans-serif);
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Sidebar / navbar ---------- */
+.navbar-vertical {
+    background: linear-gradient(180deg, var(--sidebar) 0%, var(--sidebar-2) 100%) !important;
+    border-right: 0 !important;
+    box-shadow: 4px 0 24px rgba(15, 23, 42, .12);
+}
+
+.navbar-vertical .navbar-brand,
+.navbar-vertical .navbar-brand a {
+    color: #fff !important;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    font-size: 1.15rem;
+}
+
+.navbar-vertical .nav-link {
+    color: rgba(255, 255, 255, .72) !important;
+    border-radius: 10px;
+    margin: 2px 10px;
+    padding: .55rem .8rem;
+    font-weight: 500;
+    transition: background .15s ease, color .15s ease;
+}
+
+.navbar-vertical .nav-link:hover {
+    color: #fff !important;
+    background: rgba(255, 255, 255, .08);
+}
+
+.navbar-vertical .nav-item.active > .nav-link,
+.navbar-vertical .nav-link.active {
+    color: #fff !important;
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    box-shadow: 0 6px 18px rgba(79, 70, 229, .35);
+}
+
+.navbar-vertical .nav-link .nav-link-icon {
+    color: inherit !important;
+    opacity: .9;
+}
+
+.navbar-vertical .nav-link-title {
+    font-weight: 500;
+}
+
+.navbar-vertical hr,
+.navbar-vertical .dropdown-divider {
+    border-color: rgba(255, 255, 255, .1);
+}
+
+/* Inner menu <nav> lives INSIDE the vertical sidebar — keep it transparent
+   so the sidebar gradient shows through (otherwise it renders as a white block). */
+.navbar-vertical .navbar,
+.navbar-vertical #navbar-menu,
+.navbar-vertical .navbar-collapse,
+.navbar-vertical .navbar-nav {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.navbar-vertical .navbar-toggler {
+    border-color: rgba(255, 255, 255, .25);
+}
+
+.navbar-vertical .navbar-toggler-icon {
+    filter: invert(1) brightness(2);
+}
+
+/* Logout button at the bottom of the sidebar */
+.navbar-vertical .btn-secondary {
+    background: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .18);
+    color: #fff;
+    border-radius: 10px;
+    margin: .5rem 10px 0;
+}
+
+.navbar-vertical .btn-secondary:hover {
+    background: rgba(255, 255, 255, .2);
+    color: #fff;
+}
+
+/* ---------- Page ---------- */
+.page-wrapper {
+    background: var(--bg);
+}
+
+.page-title {
+    font-weight: 800;
+    letter-spacing: -.02em;
+    color: var(--text);
+}
+
+.page-pretitle {
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-size: .72rem;
+    font-weight: 600;
+}
+
+/* ---------- Cards ---------- */
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: visible;   /* let footer/page-size dropdown escape the card */
+}
+/* keep rounded corners on the table area even though the card overflows */
+.card > .table-responsive {
+    overflow-x: auto;
+    overflow-y: visible;
+}
+.card > .table-responsive:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+
+.card-header {
+    background: transparent;
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+}
+
+.card-title {
+    font-weight: 700;
+    letter-spacing: -.01em;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+    border-radius: 10px;
+    font-weight: 600;
+    padding: .5rem .95rem;
+    transition: transform .12s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.btn:active {
+    transform: translateY(1px);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%);
+    border: 0;
+    box-shadow: 0 6px 16px rgba(79, 70, 229, .28);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background: linear-gradient(135deg, #4338ca 0%, #5b21b6 100%);
+    box-shadow: 0 8px 22px rgba(79, 70, 229, .38);
+    transform: translateY(-1px);
+}
+
+.btn-outline-primary {
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+.btn-outline-primary:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.btn-success { background: var(--success); border-color: var(--success); }
+.btn-danger  { background: var(--danger);  border-color: var(--danger); }
+
+/* ---------- Tables ---------- */
+.card > .table-responsive .table,
+.table {
+    color: var(--text);
+    margin-bottom: 0;
+}
+
+.table thead th {
+    background: #fafbff;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-size: .72rem;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    padding: .8rem 1rem;
+    white-space: nowrap;
+}
+
+.table tbody td {
+    padding: .8rem 1rem;
+    border-top: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.table tbody tr {
+    transition: background .12s ease;
+}
+
+.table-hover tbody tr:hover {
+    background: var(--primary-soft);
+}
+
+.table a {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+/* ---------- Badges / status ---------- */
+.badge {
+    border-radius: 999px;
+    font-weight: 600;
+    padding: .35em .7em;
+    letter-spacing: .01em;
+}
+
+.badge.bg-primary { background: var(--primary) !important; }
+
+/* ---------- Forms ---------- */
+.form-label {
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: .35rem;
+}
+
+.form-control,
+.form-select {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    padding: .55rem .8rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, .15);
+}
+
+/* select2 to match */
+.select2-container--default .select2-selection--single,
+.select2-container--default .select2-selection--multiple {
+    border-radius: 10px !important;
+    border: 1px solid var(--border) !important;
+    min-height: 40px;
+}
+
+.select2-container--default.select2-container--focus .select2-selection--multiple,
+.select2-container--default .select2-selection--single:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, .15);
+}
+
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background: var(--primary) !important;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background: var(--primary-soft) !important;
+    border: 1px solid #c7d2fe !important;
+    color: var(--primary-hover) !important;
+    border-radius: 8px !important;
+}
+
+/* ---------- Card footer / pagination bar ---------- */
+.card-footer {
+    background: #fafbff;
+    border-top: 1px solid var(--border);
+    padding: .9rem 1.25rem;
+    row-gap: .75rem;
+    column-gap: 1rem;
+}
+
+.card-footer .text-muted { font-size: .875rem; }
+
+/* Page-size dropdown ("Show 25 / Page") */
+.card-footer .dropdown > .dropdown-toggle {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .4rem .75rem;
+    font-weight: 600;
+    color: var(--text);
+    background: #fff;
+}
+.card-footer .dropdown > .dropdown-toggle:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.card-footer .dropdown-menu {
+    min-width: 6rem;
+    padding: .35rem;
+    margin-bottom: .35rem;
+    z-index: 1080;                 /* above table rows */
+    box-shadow: var(--shadow-lg);
+}
+.card-footer .dropdown-menu .dropdown-item {
+    padding: .45rem .7rem;
+    font-size: .875rem;
+    font-weight: 500;
+    line-height: 1.3;
+    border-radius: 8px;
+    transition: background .12s ease, color .12s ease, transform .08s ease;
+}
+.card-footer .dropdown-menu .dropdown-item:hover {
+    background: var(--primary-soft);
+    color: var(--primary-hover);
+}
+.card-footer .dropdown-menu .dropdown-item:active {
+    background: var(--primary);
+    color: #fff;
+    transform: scale(.98);
+}
+
+/* Pagination: hover + click feedback */
+.pagination .page-link {
+    transition: background .12s ease, color .12s ease, border-color .12s ease, transform .08s ease, box-shadow .12s ease;
+}
+.pagination .page-item:not(.active):not(.disabled) .page-link:hover {
+    background: var(--primary-soft);
+    border-color: #c7d2fe;
+    color: var(--primary-hover);
+}
+.pagination .page-item:not(.disabled) .page-link:active {
+    transform: scale(.94);
+}
+.pagination .page-item.active .page-link:hover {
+    background: var(--primary-hover);
+}
+.pagination .page-item.disabled .page-link {
+    opacity: .5;
+}
+
+/* ---------- Pagination ---------- */
+.pagination { gap: 4px; }
+
+.pagination .page-link {
+    border-radius: 10px;
+    margin: 0;
+    padding: .4rem .7rem;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 500;
+}
+
+.pagination .page-item.active .page-link {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, .3);
+}
+
+/* ---------- Dropdowns ---------- */
+.dropdown-menu {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+    padding: .35rem;
+}
+
+.dropdown-item {
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+.dropdown-item:hover {
+    background: var(--primary-soft);
+    color: var(--primary-hover);
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+    background: var(--primary);
+}
+
+/* ---------- Alerts ---------- */
+.alert {
+    border: 0;
+    border-radius: var(--radius-sm);
+    border-left: 4px solid var(--primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.alert-danger  { border-left-color: var(--danger); }
+.alert-success { border-left-color: var(--success); }
+
+/* ---------- Login page ---------- */
+body:has(form[action$="/login"]),
+.login-page {
+    background: radial-gradient(1200px 600px at 50% -10%, #a855f7 0%, transparent 55%),
+                linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #a855f7 100%) !important;
+}
+
+form[action$="/login"] .card,
+.login-page .card {
+    border: 0;
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .3);
+    backdrop-filter: blur(4px);
+}
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+    background: #cbd0e0;
+    border-radius: 999px;
+    border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: #a5adc7; }
+
+/* ---------- Misc ---------- */
+.text-primary { color: var(--primary) !important; }
+.bg-primary   { background: var(--primary) !important; }
+a { color: var(--primary); }
+a:hover { color: var(--primary-hover); }
+
+.empty-icon,
+.empty-title { color: var(--muted); }
+
+/* ============================================================
+   List page: responsiveness, actions column, search, filters
+   ============================================================ */
+
+/* --- Kill horizontal page scroll ---
+   The classic flexbox trap: a flex item wrapping a wide table won't shrink
+   below its content unless min-width:0. That was pushing the page sideways. */
+html, body { overflow-x: hidden; max-width: 100%; }
+.page-wrapper, .page-body, .page-body > .container-fluid { min-width: 0; }
+.list-layout { min-width: 0; gap: 1rem; }
+.list-main { min-width: 0; }               /* let the table area shrink */
+.list-main .table-responsive { overflow-x: auto; }   /* table scrolls inside its card */
+
+/* Filter sidebar: fixed on desktop, full-width & stacked on small screens */
+.list-filter { width: 300px; flex: 0 0 300px; }
+
+@media (max-width: 992px) {
+    .list-layout { flex-wrap: wrap; }
+    .list-main { margin-right: 0 !important; }
+    .list-filter { width: 100%; flex-basis: 100%; }
+}
+
+/* toolbar (actions + search) wraps cleanly on narrow screens */
+.toolbar-row .search-cell { min-width: 260px; flex: 1 1 320px; max-width: 420px; }
+@media (max-width: 576px) {
+    .toolbar-row .search-cell { max-width: 100%; }
+}
+
+/* --- Search box: icon buttons (no fill) --- */
+.search-cell .input-group { gap: 6px; flex-wrap: nowrap; }
+.search-cell .input-group > * {
+    border-radius: 10px !important;   /* override Bootstrap input-group corner reset */
+}
+.search-cell .form-control {
+    padding: .6rem .9rem;
+}
+.search-cell .form-control:focus {
+    box-shadow: none;                 /* no glow */
+    border-color: var(--primary);
+}
+#search-button,
+#search-reset {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--muted);
+    padding: .5rem .95rem;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+    transform: none !important;       /* no hover jump */
+}
+#search-button,
+#search-button:hover,
+#search-button:focus,
+#search-button:active,
+#search-reset,
+#search-reset:hover,
+#search-reset:focus,
+#search-reset:active {
+    box-shadow: none !important;      /* no glow at all */
+    outline: none !important;
+}
+#search-button { color: var(--primary); }
+#search-button:hover { background: var(--primary-soft); border-color: #c7d2fe; color: var(--primary-hover); }
+#search-reset:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: #fef2f2; }
+
+/* --- Clickable rows --- */
+tr.row-clickable { cursor: pointer; }
+tr.row-clickable:hover { background: var(--primary-soft) !important; }
+/* keep the plain cell links from looking like links inside a clickable row */
+tr.row-clickable td > a:not(.action-icon) { color: var(--text); font-weight: 500; }
+tr.row-clickable:hover td > a:not(.action-icon) { color: var(--primary-hover); }
+
+/* --- Actions column (right side of each row) --- */
+.actions-head { color: var(--muted); }
+.actions-cell { white-space: nowrap; }
+.action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-left: 6px;
+    border-radius: 10px;
+    font-size: 1.15rem;
+    background: transparent;
+    transition: background .15s ease, color .15s ease, transform .1s ease;
+}
+.action-icon:hover { transform: translateY(-1px); }
+.action-icon:active { transform: scale(.9); }
+.action-edit { color: var(--success); }
+.action-edit:hover { background: #ecfdf5; color: #059669; }
+.action-delete { color: var(--danger); }
+.action-delete:hover { background: #fef2f2; color: #b91c1c; }
+
+/* --- Filter links: active / inactive states --- */
+.filter-title {
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-size: .74rem;
+    color: var(--muted);
+    margin-bottom: .4rem;
+}
+.filter-options { display: flex; flex-direction: column; gap: 2px; }
+.filter-link {
+    color: var(--text);
+    padding: .35rem .6rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-weight: 500;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.filter-link:hover {
+    background: var(--primary-soft);
+    color: var(--primary-hover);
+}
+.filter-link.active {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    color: #fff !important;
+    border-color: transparent;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, .3);
+}
+.filter-link.active::before {
+    content: "\f00c"; /* fa check */
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    margin-right: .4rem;
+    font-size: .75em;
+}
+/* on hover an active filter hints that clicking removes it */
+.filter-link.active:hover::before { content: "\f00d"; /* fa times */ }
+.filter-link.active:hover { filter: brightness(.95); }
+
+/* Reset-all-filters button in the Filters card header */
+.filter-reset-all {
+    color: var(--primary);
+    background: var(--primary-soft);
+    border: 1px solid #dfe3f3;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: .78rem;
+    padding: .25rem .6rem;
+}
+.filter-reset-all:hover {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+.filter-reset-all.disabled {
+    opacity: .5;
+    pointer-events: none;
+}

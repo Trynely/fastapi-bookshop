@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Панель поддержки{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="page-title">🎧 Панель менеджера поддержки</h1>
+
+    <div class="tabs">
+        <button class="tab active" data-status="queue">📥 Очередь</button>
+        <button class="tab" data-status="active">💬 Активные</button>
+        <button class="tab" data-status="closed">✅ Закрытые</button>
+    </div>
+
+    <div class="manager-layout">
+        <aside id="chat-list"></aside>
+
+        <div class="chat-shell" style="height:calc(100vh - 260px);">
+            <div class="chat-head">
+                <span id="chat-title">Выберите чат</span>
+                <span class="chat-status off" id="ws-status"></span>
+            </div>
+            <div class="chat-body" id="chat-body">
+                <div class="empty-state"><div class="icon">👈</div><p>Выберите чат из списка</p></div>
+            </div>
+            <div class="chat-input-row">
+                <button class="btn btn-outline" id="btn-assign" hidden>Взять в работу</button>
+                <input class="form-input" id="chat-input" placeholder="Ответ клиенту…" disabled>
+                <button class="btn" id="chat-send" disabled>Отправить</button>
+                <button class="btn btn-danger" id="btn-close" hidden>Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async () => {
+    if (!await requireAuth()) return;
+
+    const listEl = document.getElementById("chat-list");
+    const body = document.getElementById("chat-body");
+    const input = document.getElementById("chat-input");
+    const sendBtn = document.getElementById("chat-send");
+    const assignBtn = document.getElementById("btn-assign");
+    const closeBtn = document.getElementById("btn-close");
+    const statusEl = document.getElementById("ws-status");
+
+    let currentStatus = "queue";
+    let currentChat = null;
+    let ws = null;
+    let msgOffset = 0;
+    const MSG_LIMIT = 50;
+
+    const scroll = () => { body.scrollTop = body.scrollHeight; };
+
+    function addMsg({ sender, content, created_at }, { prepend = false } = {}) {
+        const el = document.createElement("div");
+        const mine = sender === "manager";
+        el.className = `msg ${mine ? "msg-user" : "msg-other"}`;
+        if (!mine) {
+            const label = { bot: "🤖 Бот", user: "🙋 Клиент" }[sender] ?? sender;
+            el.innerHTML = `<div class="msg-sender">${esc(label)}</div>`;
+        }
+        el.appendChild(document.createTextNode(content));
+        if (created_at) el.title = new Date(created_at).toLocaleString("ru-RU");
+        prepend ? body.prepend(el) : body.appendChild(el);
+        if (!prepend) scroll();
+    }
+
+    /* ---------- список чатов ---------- */
+    async function loadChats() {
+        listEl.innerHTML = '<div class="skeleton" style="height:4rem;margin-bottom:.5rem;"></div>'.repeat(3);
+        try {
+            const chats = await apiFetch(`/support/manager/chats?status=${currentStatus}`);
+            if (!chats.length) {
+                listEl.innerHTML = emptyState("📭", "Чатов нет");
+                return;
+            }
+            listEl.innerHTML = chats.map((c) => `
+                <div class="chat-list-item" data-id="${c.id}">
+                    <strong>Чат #${c.id}</strong> · клиент ${c.user_id}
+                    <div class="list-sub">
+                        ${c.escalation_reason ? `⚠️ ${esc(c.escalation_reason)} · ` : ""}
+                        ${c.last_message_at ? new Date(c.last_message_at).toLocaleString("ru-RU") : ""}
+                    </div>
+                </div>`).join("");
+
+            listEl.querySelectorAll(".chat-list-item").forEach((item) => {
+                item.addEventListener("click", () => openChat(Number(item.dataset.id), item));
+            });
+        } catch (e) {
+            listEl.innerHTML = emptyState("😕", e.status === 403 ? "Доступ только для менеджеров" : e.message);
+        }
+    }
+
+    /* ---------- история сообщений (offset-пагинация, asc) ---------- */
+    async function loadHistory(chatId) {
+        const messages = await apiFetch(
+            `/support/manager/chats/${chatId}/messages?limit=${MSG_LIMIT}&offset=${msgOffset}`);
+
+        body.querySelector(".history-more")?.remove();
+        messages.forEach((m) => addMsg(m));
+        msgOffset += messages.length;
+
+        if (messages.length >= MSG_LIMIT) {
+            const more = document.createElement("button");
+            more.className = "btn btn-ghost btn-sm history-more";
+            more.style.alignSelf = "center";
+            more.textContent = "↓ Показать ещё";
+            more.addEventListener("click", () => loadHistory(chatId).catch((e) => toast(e.message, "error")));
+            body.appendChild(more);
+            scroll();
+        }
+    }
+
+    /* ---------- открыть чат ---------- */
+    async function openChat(chatId, item) {
+        listEl.querySelector(".chat-list-item.active")?.classList.remove("active");
+        item.classList.add("active");
+
+        currentChat = chatId;
+        msgOffset = 0;
+        document.getElementById("chat-title").textContent = `Чат #${chatId}`;
+        assignBtn.hidden = currentStatus !== "queue";
+        closeBtn.hidden = currentStatus === "closed";
+
+        ws?.close();
+        body.innerHTML = "";
+
+        try {
+            await loadHistory(chatId);
+        } catch (e) {
+            body.innerHTML = emptyState("😕", e.message);
+            return;
+        }
+
+        if (currentStatus === "closed") return;
+
+        /* live-подключение */
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}${API}/support/ws/manager/${chatId}?token=${encodeURIComponent(getToken())}`);
+
+        ws.onopen = () => {
+            statusEl.textContent = "онлайн";
+            statusEl.className = "chat-status on";
+            input.disabled = sendBtn.disabled = false;
+        };
+        ws.onmessage = (e) => {
+            let p;
+            try { p = JSON.parse(e.data); } catch { return; }
+            if (p.type === "message" && p.data?.sender !== "manager") addMsg(p.data);
+            if (p.type === "system") {
+                const el = document.createElement("div");
+                el.className = "msg msg-system";
+                el.textContent = String(p.data ?? "");
+                body.appendChild(el);
+                scroll();
+            }
+        };
+        ws.onclose = () => {
+            statusEl.textContent = "офлайн";
+            statusEl.className = "chat-status off";
+            input.disabled = sendBtn.disabled = true;
+        };
+    }
+
+    /* ---------- действия ---------- */
+    function send() {
+        const text = input.value.trim();
+        if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(text);
+        addMsg({ sender: "manager", content: text });
+        input.value = "";
+    }
+
+    sendBtn.addEventListener("click", send);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+
+    assignBtn.addEventListener("click", async () => {
+        if (!currentChat) return;
+        try {
+            await apiFetch(`/support/manager/chats/${currentChat}/assign`, { method: "POST" });
+            toast(`Чат #${currentChat} взят в работу`, "success");
+            assignBtn.hidden = true;
+            loadChats();
+        } catch (e) { toast(e.message, "error"); }
+    });
+
+    closeBtn.addEventListener("click", async () => {
+        if (!currentChat) return;
+        try {
+            await apiFetch(`/support/manager/chats/${currentChat}/close`, { method: "POST" });
+            toast(`Чат #${currentChat} закрыт`, "success");
+            ws?.close();
+            loadChats();
+        } catch (e) { toast(e.message, "error"); }
+    });
+
+    /* ---------- вкладки статусов ---------- */
+    document.querySelectorAll(".tabs .tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+            document.querySelector(".tabs .active")?.classList.remove("active");
+            tab.classList.add("active");
+            currentStatus = tab.dataset.status;
+            loadChats();
+        });
+    });
+
+    loadChats();
+})();
+</script>
+{% endblock %}

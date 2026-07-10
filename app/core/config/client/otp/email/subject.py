@@ -1,0 +1,1 @@
+OTP_EMAIL_SUBJECT_CONF = "Код подтверждения" 

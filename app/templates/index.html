@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Главная{% endblock %}
+
+{% block content %}
+<div class="container">
+    <section class="hero">
+        <h1>Книги, которые вас найдут сами</h1>
+        <p>Персональные рекомендации, живой каталог и ИИ-консультант, который поможет выбрать следующую книгу.</p>
+        <a href="/books" class="btn">Перейти в каталог →</a>
+    </section>
+
+    <section id="reco-section" hidden>
+        <h2 class="section-title">✨ Рекомендации для вас</h2>
+        <div class="book-grid" id="reco-grid"></div>
+        <div class="scroll-sentinel" id="reco-more"></div>
+    </section>
+
+    <section>
+        <h2 class="section-title">🔥 Популярное</h2>
+        <div class="book-grid" id="popular-grid"></div>
+        <div class="scroll-sentinel" id="popular-more"></div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async () => {
+    /* Популярное: cursor-пагинация по encoded_cursor */
+    const popularGrid = document.getElementById("popular-grid");
+    showSkeletons(popularGrid, 4);
+
+    const popularPager = createCursorPager({
+        sentinel: document.getElementById("popular-more"),
+        async fetchPage(cursor) {
+            const qs = cursor ? `&encoded_cursor=${encodeURIComponent(cursor)}` : "";
+            const data = await apiFetch(`/books?by=popular${qs}`);
+            return { items: data.books, next: data.next, hasNext: data.has_next };
+        },
+        render(items, isFirst) {
+            if (isFirst) popularGrid.innerHTML = "";
+            if (isFirst && !items.length) {
+                popularGrid.innerHTML = emptyState("📚", "Книги пока не добавлены");
+                return;
+            }
+            popularGrid.insertAdjacentHTML("beforeend", items.map(bookCard).join(""));
+        },
+    });
+    popularPager.loadNext();
+
+    /* Персональные рекомендации — только для авторизованных */
+    if (!getToken() && !(await refreshAccessToken())) return;
+
+    const recoSection = document.getElementById("reco-section");
+    const recoGrid = document.getElementById("reco-grid");
+
+    const recoPager = createCursorPager({
+        sentinel: document.getElementById("reco-more"),
+        async fetchPage(cursor) {
+            const qs = cursor ? `?encoded_cursor=${encodeURIComponent(cursor)}` : "";
+            const data = await apiFetch(`/books/main/recommendations${qs}`);
+            return { items: data.books, next: data.next_cursor, hasNext: Boolean(data.next_cursor) };
+        },
+        render(items, isFirst) {
+            if (isFirst) recoGrid.innerHTML = "";
+            if (items.length) recoSection.hidden = false;
+            recoGrid.insertAdjacentHTML("beforeend", items.map(bookCard).join(""));
+        },
+    });
+
+    try { await recoPager.loadNext(); } catch { /* рекомендации не критичны */ }
+})();
+</script>
+{% endblock %}

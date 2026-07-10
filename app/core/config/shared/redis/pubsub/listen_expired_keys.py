@@ -1,0 +1,1 @@
+LISTEN_EXPIRED_KEYS_CHANNEL = "__keyevent@0__:expired"

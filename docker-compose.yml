@@ -1,0 +1,207 @@
+# Выносим общие настройки в якорь (extension field)
+x-app-base: &app-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: always
+  env_file:
+    - .env
+  environment:
+    - PYTHONPATH=/app
+  # host.docker.internal есть из коробки только в Docker Desktop;
+  # в docker-ce (WSL) имя нужно объявить вручную
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - .:/app
+    - venv_data:/app/.venv
+  depends_on:
+    # clickhouse:
+    #   condition: service_healthy
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+    rabbitmq:
+      condition: service_healthy
+    # ollama:
+    #   condition: service_started
+    elasticsearch:
+      condition: service_healthy
+
+services:
+  fastapi:
+    <<: *app-base
+    container_name: bookshop
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/.venv
+      - ./cert:/cert:ro
+    # poetry run больше не нужен, т.к. .venv добавлен в PATH в Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # llm_consumer:
+  #   <<: *app-base
+  #   container_name: llm_consumer
+  #   command: python -m app.support.infrastructure.rabbitmq.consumers.llm_bot_answer
+  #   depends_on:
+  #     rabbitmq:
+  #       condition: service_healthy
+  #     ollama:
+  #       condition: service_started
+  #     qdrant:
+  #       condition: service_started
+
+  # book_popularity_consumer:
+  #   <<: *app-base
+  #   container_name: book_popularity_consumer
+  #   command: python -m app.product.infrastructure.rabbitmq.consumer
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    command: redis-server --notify-keyspace-events Ex
+
+  rabbitmq:
+    build:
+      context: ./app/shared/service/infrastructure/rabbitmq
+      dockerfile: Dockerfile
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    environment:
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit disk_free_limit 2147483648"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:17.6
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # clickhouse:
+  #   image: clickhouse/clickhouse-server:24.1
+  #   container_name: clickhouse
+  #   restart: always
+  #   ports:
+  #     - "8123:8123"
+  #   volumes:
+  #     - clickhouse_data:/var/lib/clickhouse
+  #   ulimits:
+  #     nofile:
+  #       soft: 262144
+  #       hard: 262144
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.0
+    container_name: elasticsearch
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: always
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   restart: always
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+
+  taskiq_worker:
+    <<: *app-base
+    container_name: taskiq_worker
+    command: taskiq worker app.shared.service.infrastructure.taskiq.broker:taskiq_broker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      # ollama:
+      #   condition: service_started
+      elasticsearch:
+        condition: service_healthy
+
+  taskiq_scheduler:
+    <<: *app-base
+    container_name: taskiq_scheduler
+    command: taskiq scheduler app.shared.service.infrastructure.taskiq.broker:scheduler
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  
+  recommendation_consumer:
+    <<: *app-base
+    container_name: recommendation_consumer
+    command: python -m app.product.service.infrastructure.rabbitmq.book.consumers.consumer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      # ollama:
+      #   condition: service_started
+
+volumes:
+  postgres_data:
+  elasticsearch_data:
+  qdrant_data:
+  ollama_data:
+  venv_data:

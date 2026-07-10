@@ -1,0 +1,1 @@
+GOOGLE_REQUEST_CALLBACK_CONF = "google_callback"

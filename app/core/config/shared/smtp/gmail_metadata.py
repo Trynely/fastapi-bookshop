@@ -1,0 +1,3 @@
+GMAIL_SUBJECT = "Subject"
+GMAIL_LETTER_FROM = "From"
+GMAIL_LETTER_TO = "To"

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Избранное{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="page-title">❤️ Избранное</h1>
+    <div id="wishlist-content">
+        <div class="skeleton" style="height:6rem;margin-bottom:.75rem;"></div>
+        <div class="skeleton" style="height:6rem;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async () => {
+    if (!await requireAuth()) return;
+    const root = document.getElementById("wishlist-content");
+
+    function itemRow(b) {
+        return `
+        <div class="list-row" id="wish-${b.id}" data-book-id="${b.id}">
+            <a href="/books/${esc(b.slug)}" class="list-thumb">
+                ${b.img ? `<img src="${esc(b.img)}" alt="">` : "📖"}
+            </a>
+            <div class="list-body">
+                <div class="list-title"><a href="/books/${esc(b.slug)}" style="color:inherit;">${esc(b.title)}</a></div>
+                <div class="list-sub">${fmtPrice(b.price)}</div>
+            </div>
+            <button class="btn btn-sm" data-cart-btn onclick="addToCart(${b.id})">🧺 В корзину</button>
+            <button class="btn btn-danger btn-sm" onclick="removeFromWishlist(${b.id})" title="Удалить">✕</button>
+        </div>`;
+    }
+
+    window.removeFromWishlist = async (bookId) => {
+        try {
+            await apiFetch(`/books/wishlist/${bookId}`, { method: "DELETE" });
+            userLists.wishlist.delete(Number(bookId));
+            document.getElementById(`wish-${bookId}`)?.remove();
+            toast("Книга удалена из избранного", "success");
+            if (!root.querySelector(".list-row")) showEmpty();
+        } catch (e) {
+            toast(e.message, "error");
+        }
+    };
+
+    function showEmpty() {
+        root.innerHTML = emptyState("❤️", "В избранном пока пусто") +
+            '<div style="text-align:center;"><a class="btn" href="/books">В каталог</a></div>';
+    }
+
+    try {
+        const items = await apiFetch("/books/wishlist/by/user");
+        if (!items.length) return showEmpty();
+        root.innerHTML = items.map(itemRow).join("");
+    } catch (e) {
+        root.innerHTML = emptyState("😕", e.message);
+    }
+})();
+</script>
+{% endblock %}

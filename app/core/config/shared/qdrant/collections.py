@@ -1,0 +1,1 @@
+QDRANT_COLLECTION_NAME = "bookshop_knowledge_base"

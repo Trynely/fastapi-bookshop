@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Книга{% endblock %}
+
+{% block content %}
+<div class="container" id="book-page" data-slug="{{ book_slug }}">
+    <div id="book-detail">
+        <div class="detail-layout">
+            <div class="skeleton" style="aspect-ratio:3/4;border-radius:12px;"></div>
+            <div>
+                <div class="skeleton" style="height:2rem;width:60%;margin-bottom:1rem;"></div>
+                <div class="skeleton" style="height:1rem;width:40%;margin-bottom:2rem;"></div>
+                <div class="skeleton" style="height:8rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <section id="similar-section" hidden>
+        <h2 class="section-title">📖 Похожие книги</h2>
+        <div class="book-grid" id="similar-grid"></div>
+        <div class="scroll-sentinel" id="similar-more"></div>
+    </section>
+
+    <section id="reviews-section">
+        <h2 class="section-title">⭐ Отзывы</h2>
+
+        <div class="card" id="review-form-card" style="margin-bottom:1.25rem;">
+            <div class="form-group">
+                <label class="form-label">Ваша оценка</label>
+                <div class="tabs" id="rating-stars">
+                    <button class="tab" data-r="1">1 ★</button>
+                    <button class="tab" data-r="2">2 ★</button>
+                    <button class="tab" data-r="3">3 ★</button>
+                    <button class="tab" data-r="4">4 ★</button>
+                    <button class="tab active" data-r="5">5 ★</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="review-comment">Комментарий</label>
+                <textarea class="form-textarea" id="review-comment" placeholder="Поделитесь впечатлениями…"></textarea>
+            </div>
+            <button class="btn" id="review-submit">Оставить отзыв</button>
+        </div>
+
+        <div id="reviews-list"></div>
+        <nav class="pagination" id="reviews-pagination" aria-label="Страницы отзывов"></nav>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async () => {
+    const slug = document.getElementById("book-page").dataset.slug;
+    let book = null;
+
+    /* ---------- деталка книги ---------- */
+    try {
+        book = await apiFetch(`/books/${encodeURIComponent(slug)}`);
+    } catch (e) {
+        document.getElementById("book-detail").innerHTML =
+            emptyState("😕", e.status === 404 ? "Книга не найдена" : e.message);
+        return;
+    }
+
+    document.title = `${book.title} · Bookshop`;
+
+    const spec = (label, value) => value == null ? "" :
+        `<tr><td>${label}</td><td>${esc(value)}</td></tr>`;
+
+    document.getElementById("book-detail").innerHTML = `
+    <div class="detail-layout">
+        <div class="detail-cover">
+            ${book.img ? `<img src="${esc(book.img)}" alt="${esc(book.title)}">` : "📖"}
+        </div>
+        <div>
+            <h1 class="page-title" style="margin-bottom:.25rem;">${esc(book.title)}</h1>
+            <p style="color:var(--muted);">
+                <a href="/categories/${esc(book.category.slug)}">${esc(book.category.title ?? book.category.slug)}</a>
+                · ${esc(book.author.name)}
+            </p>
+
+            <div class="detail-price-row">
+                <span class="detail-price">${fmtPrice(book.price)}</span>
+                ${book.discount_percent ? `<span class="badge badge-discount" style="position:static;">−${book.discount_percent}%</span>` : ""}
+                ${book.rating ? `<span class="rating" style="font-size:1rem;">★ ${Number(book.rating).toFixed(1)}${book.total_ratings ? ` (${book.total_ratings})` : ""}</span>` : ""}
+            </div>
+
+            <div data-book-id="${book.id}" style="display:flex;gap:.6rem;margin-bottom:1.25rem;flex-wrap:wrap;">
+                <button class="btn" data-cart-btn onclick="addToCart(${book.id})" ${book.is_available ? "" : "disabled"}>🧺 В корзину</button>
+                <button class="btn btn-outline" data-wish-btn data-full onclick="addToWishlist(${book.id})">❤️ В избранное</button>
+                ${book.is_available ? '<span class="badge badge-success" style="align-self:center;">В наличии</span>' : '<span class="badge badge-warn" style="align-self:center;">Нет в наличии</span>'}
+            </div>
+
+            ${book.description ? `<p>${esc(book.description)}</p>` : ""}
+
+            <table class="spec-table">
+                ${spec("Автор", book.author.name)}
+                ${spec("Год издания", book.issue_year)}
+                ${spec("Страниц", book.pages)}
+                ${spec("Тип бумаги", book.paper_type?.title)}
+                ${spec("Страна производства", book.made_in?.title)}
+                ${spec("Продано", book.total_sales)}
+            </table>
+        </div>
+    </div>`;
+
+    /* ---------- похожие: random cursor (md5 + seed) ---------- */
+    const similarGrid = document.getElementById("similar-grid");
+    const similarPager = createCursorPager({
+        sentinel: document.getElementById("similar-more"),
+        async fetchPage(cursor) {
+            const params = new URLSearchParams({
+                category_id: book.category.id,
+                author_id: book.author.id,
+                seed: getSeed(`similar_seed_${slug}`),
+            });
+            if (cursor) params.set("md5_cursor", cursor);
+            const data = await apiFetch(`/books/${encodeURIComponent(slug)}/similar?${params}`);
+            return { items: data.books, next: data.next, hasNext: data.has_next };
+        },
+        render(items, isFirst) {
+            if (isFirst) similarGrid.innerHTML = "";
+            if (items.length) document.getElementById("similar-section").hidden = false;
+            similarGrid.insertAdjacentHTML("beforeend",
+                items.filter((b) => b.slug !== slug).map(bookCard).join(""));
+        },
+    });
+    try { await similarPager.loadNext(); } catch { /* не критично */ }
+
+    /* ---------- отзывы: offset-пагинация ---------- */
+    const reviewsList = document.getElementById("reviews-list");
+    const reviewsPagination = document.getElementById("reviews-pagination");
+
+    function reviewItem(r) {
+        const name = r.user?.username ?? "Аноним";
+        return `
+        <div class="review-item">
+            <div class="review-head">
+                <span class="avatar">${esc(name[0].toUpperCase())}</span>
+                <div>
+                    <strong>${esc(name)}</strong>
+                    <span class="rating"> ${"★".repeat(r.rating ?? 0)}</span>
+                    <div class="review-date">${fmtDate(r.created_at)}</div>
+                </div>
+            </div>
+            ${r.comment ? `<p>${esc(r.comment)}</p>` : ""}
+        </div>`;
+    }
+
+    async function loadReviews(page = 1) {
+        try {
+            const data = await apiFetch(
+                `/books/reviews/${encodeURIComponent(slug)}?page=${page}`);
+
+            reviewsList.innerHTML = data.reviews.length
+                ? data.reviews.map(reviewItem).join("")
+                : emptyState("💬", "Отзывов пока нет — будьте первым!");
+
+            renderPagination(reviewsPagination, data, loadReviews);
+        } catch (e) {
+            reviewsList.innerHTML = emptyState("😕", e.message);
+        }
+    }
+    loadReviews();
+
+    /* ---------- форма отзыва ---------- */
+    let rating = 5;
+    document.querySelectorAll("#rating-stars .tab").forEach((t) => {
+        t.addEventListener("click", () => {
+            document.querySelector("#rating-stars .active")?.classList.remove("active");
+            t.classList.add("active");
+            rating = Number(t.dataset.r);
+        });
+    });
+
+    document.getElementById("review-submit").addEventListener("click", async () => {
+        if (!await requireAuth()) return;
+        const comment = document.getElementById("review-comment").value.trim();
+        try {
+            await apiFetch("/books/reviews", {
+                method: "POST",
+                json: { book_id: book.id, rating, comment: comment || null },
+            });
+            toast("Отзыв опубликован", "success");
+            document.getElementById("review-comment").value = "";
+            loadReviews();
+        } catch (e) {
+            toast(e.message, "error");
+        }
+    });
+})();
+</script>
+{% endblock %}

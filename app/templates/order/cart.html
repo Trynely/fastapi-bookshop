@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Корзина{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="page-title">🧺 Корзина</h1>
+    <div id="cart-content">
+        <div class="skeleton" style="height:6rem;margin-bottom:.75rem;"></div>
+        <div class="skeleton" style="height:6rem;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async () => {
+    if (!await requireAuth()) return;
+    const root = document.getElementById("cart-content");
+
+    const MAX_ITEMS = 10;         // максимум позиций в одном заказе
+    let items = [];               // позиции корзины (с сервера)
+    let selected = new Set();     // book_id выбранных позиций
+
+    const stock = (it) => it.book.quantity;                       // остаток на складе
+    const inStock = (it) => it.book.is_available && stock(it) > 0;
+    const lineTotal = (it) => it.book.price * it.quantity;
+
+    function itemRow(it) {
+        const b = it.book;
+        const checked = selected.has(b.id);
+        const dead = !inStock(it);
+        return `
+        <div class="list-row ${dead ? "out-of-stock" : (checked ? "" : "unselected")}" data-book="${b.id}">
+            <input type="checkbox" class="cart-check" data-book="${b.id}"
+                   ${checked ? "checked" : ""} ${dead ? "disabled" : ""}>
+            <a href="/books/${esc(b.slug ?? "")}" class="list-thumb">
+                ${b.img ? `<img src="${esc(b.img)}" alt="">` : "📖"}
+            </a>
+            <div class="list-body">
+                <div class="list-title"><a href="/books/${esc(b.slug ?? "")}" style="color:inherit;">${esc(b.title)}</a></div>
+                <div class="list-sub">${fmtPrice(b.price)} за шт.</div>
+                ${dead ? '<div class="qty-stock">Нет в наличии</div>' : ""}
+            </div>
+            ${dead ? "" : `
+            <div style="text-align:center;">
+                <div class="qty-stepper">
+                    <button class="qty-btn" data-book="${b.id}" data-delta="-1" title="${it.quantity === 1 ? "Убрать из корзины" : "Меньше"}">−</button>
+                    <span class="qty-value">${it.quantity}</span>
+                    <button class="qty-btn" data-book="${b.id}" data-delta="1"
+                            ${it.quantity >= stock(it) ? "disabled" : ""} title="Больше">+</button>
+                </div>
+                ${it.quantity >= stock(it) ? `<div class="qty-stock">осталось ${stock(it)} шт.</div>` : ""}
+            </div>`}
+            <div class="list-price">${fmtPrice(lineTotal(it))}</div>
+        </div>`;
+    }
+
+    function summary() {
+        const sel = items.filter(it => selected.has(it.book.id));
+        const totalQty = sel.reduce((s, it) => s + it.quantity, 0);
+        const totalSum = sel.reduce((s, it) => s + lineTotal(it), 0);
+        return `
+        <aside class="card summary-card">
+            <h3 style="margin-bottom:.75rem;">Итого</h3>
+            <div class="summary-row"><span>Позиции</span><span>${sel.length} из ${items.length}</span></div>
+            <div class="summary-row"><span>Товары</span><span>${totalQty} шт.</span></div>
+            <div class="summary-row summary-total"><span>К оплате</span><span>${fmtPrice(totalSum)}</span></div>
+            <button class="btn btn-block" id="checkout-btn" style="margin-top:1rem;"
+                    ${sel.length === 0 ? "disabled" : ""}>
+                Оформить заказ${sel.length ? ` (${sel.length})` : ""}
+            </button>
+            <div class="selection-hint">Можно выбрать не больше ${MAX_ITEMS} позиций за один заказ.</div>
+        </aside>`;
+    }
+
+    function render() {
+        if (!items.length) {
+            root.innerHTML = emptyState("🧺", "Корзина пуста — загляните в каталог!") +
+                '<div style="text-align:center;"><a class="btn" href="/books">В каталог</a></div>';
+            return;
+        }
+
+        root.innerHTML = `
+        <div class="cart-layout">
+            <div>${items.map(itemRow).join("")}</div>
+            ${summary()}
+        </div>`;
+
+        // чекбоксы
+        root.querySelectorAll(".cart-check").forEach(cb => cb.addEventListener("change", (e) => {
+            const bookId = Number(e.currentTarget.dataset.book);
+            if (e.currentTarget.checked) {
+                if (selected.size >= MAX_ITEMS) {
+                    e.currentTarget.checked = false;
+                    toast(`Не больше ${MAX_ITEMS} позиций за один заказ`, "error");
+                    return;
+                }
+                selected.add(bookId);
+            } else {
+                selected.delete(bookId);
+            }
+            render();
+        }));
+
+        // степперы количества
+        root.querySelectorAll(".qty-btn").forEach(btn => btn.addEventListener("click", (e) => {
+            changeQty(
+                Number(e.currentTarget.dataset.book),
+                Number(e.currentTarget.dataset.delta),
+                e.currentTarget,
+            );
+        }));
+
+        const checkoutBtn = document.getElementById("checkout-btn");
+        if (checkoutBtn) checkoutBtn.addEventListener("click", checkout);
+    }
+
+    async function changeQty(bookId, delta, btn) {
+        const it = items.find(i => i.book.id === bookId);
+        if (!it) return;
+
+        const newQty = it.quantity + delta;
+
+        // локальная проверка по остатку, сервер перепроверит ещё раз
+        if (newQty > stock(it)) {
+            toast(`Доступно только ${stock(it)} шт.`, "error");
+            return;
+        }
+
+        btn.disabled = true;
+        try {
+            const { quantity } = await apiFetch(
+                `/books/cart/${bookId}/quantity?quantity=${newQty}`,
+                { method: "PATCH" },
+            );
+
+            if (quantity === 0) {
+                items = items.filter(i => i.book.id !== bookId);
+                selected.delete(bookId);
+                toast("Товар убран из корзины", "success");
+            } else {
+                it.quantity = quantity;
+            }
+            render();
+        } catch (err) {
+            toast(err.message, "error");   // например: остаток изменился на сервере
+            btn.disabled = false;
+        }
+    }
+
+    async function checkout(e) {
+        const sel = items.filter(it => selected.has(it.book.id));
+        if (!sel.length) return;
+
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "Переходим к оплате…";
+        try {
+            const { checkout_url } = await apiFetch("/orders", {
+                method: "POST",
+                json: {
+                    items: sel.map(it => ({
+                        book_id: it.book.id,
+                        quantity: it.quantity,
+                    })),
+                },
+            });
+            if (checkout_url) {
+                location.href = checkout_url;          // редирект на Stripe Checkout
+            } else {
+                toast("Заказ оформлен", "success");
+                location.reload();
+            }
+        } catch (err) {
+            toast(err.message, "error");
+            btn.disabled = false;
+            btn.textContent = "Оформить заказ";
+        }
+    }
+
+    try {
+        const cart = await apiFetch("/books/cart/by/user");
+        items = cart.items;
+
+        // по умолчанию выбираем первые MAX_ITEMS доступных позиций
+        items.filter(inStock).slice(0, MAX_ITEMS)
+             .forEach(it => selected.add(it.book.id));
+
+        render();
+    } catch (e) {
+        root.innerHTML = emptyState("😕", e.message);
+    }
+})();
+</script>
+{% endblock %}

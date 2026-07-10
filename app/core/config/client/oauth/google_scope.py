@@ -1,0 +1,1 @@
+GOOGLE_SCOPE_CONF = "openid email profile"

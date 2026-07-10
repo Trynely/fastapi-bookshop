@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Категория{% endblock %}
+
+{% block content %}
+<div class="container" id="category-page" data-slug="{{ category_slug }}">
+    <h1 class="page-title" id="category-title">Книги категории</h1>
+
+    <div class="search-bar">
+        <select class="form-select" id="search-field" style="flex:0 0 190px;">
+            <option value="title">По названию</option>
+            <option value="author">По имени автора</option>
+            <option value="country">По стране производства</option>
+        </select>
+        <input class="form-input" id="search-input" type="search" placeholder="Поиск в категории…">
+        <button class="btn" id="search-btn">Найти</button>
+        <button class="btn btn-ghost" id="search-reset" hidden>Сбросить</button>
+    </div>
+
+    <div class="book-grid" id="books-grid"></div>
+
+    <div class="scroll-sentinel" id="load-more"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const slug = document.getElementById("category-page").dataset.slug;
+    const grid = document.getElementById("books-grid");
+    const searchInput = document.getElementById("search-input");
+    const searchField = document.getElementById("search-field");
+    const resetBtn = document.getElementById("search-reset");
+
+    document.getElementById("category-title").textContent =
+        `Книги категории «${decodeURIComponent(slug)}»`;
+
+    /* mode: null → случайная выдача (md5+seed), иначе поиск (id_cursor) */
+    let mode = null;
+    let query = "";
+
+    const SEARCH = {
+        author: { path: "author", param: "name" },
+        title: { path: "title", param: "title" },
+        country: { path: "country", param: "made_in" },
+    };
+
+    const pager = createCursorPager({
+        sentinel: document.getElementById("load-more"),
+        async fetchPage(cursor) {
+            let url, params;
+
+            if (!mode) {
+                params = new URLSearchParams({ seed: getSeed(`category_seed_${slug}`) });
+                if (cursor) params.set("md5_cursor", cursor);
+                url = `/books/categories/${encodeURIComponent(slug)}?${params}`;
+            } else {
+                const s = SEARCH[mode];
+                params = new URLSearchParams({ [s.param]: query });
+                if (cursor) params.set("id_cursor", cursor);
+                url = `/books/categories/${encodeURIComponent(slug)}/${s.path}?${params}`;
+            }
+
+            const data = await apiFetch(url);
+            return { items: data.books, next: data.next, hasNext: data.has_next };
+        },
+        render(items, isFirst) {
+            if (isFirst) grid.innerHTML = "";
+            if (isFirst && !items.length) {
+                grid.innerHTML = emptyState("🔍", "Ничего не найдено");
+                return;
+            }
+            grid.insertAdjacentHTML("beforeend", items.map(bookCard).join(""));
+        },
+    });
+
+    function load() {
+        showSkeletons(grid, 8);
+        pager.reset();
+        pager.loadNext();
+    }
+
+    document.getElementById("search-btn").addEventListener("click", () => {
+        query = searchInput.value.trim();
+        mode = query ? searchField.value : null;
+        resetBtn.hidden = !query;
+        load();
+    });
+
+    searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") document.getElementById("search-btn").click();
+    });
+
+    resetBtn.addEventListener("click", () => {
+        searchInput.value = "";
+        query = "";
+        mode = null;
+        resetBtn.hidden = true;
+        load();
+    });
+
+    load();
+})();
+</script>
+{% endblock %}

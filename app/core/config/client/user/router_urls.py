@@ -1,0 +1,7 @@
+USER_BASE_URL_CONF = "/users"
+USER_REGISTER_URL_CONF = "/register"
+USER_LOGIN_URL_CONF = "/login"
+USER_LOGIN_VERIFY_URL_CONF = "/login/verify"
+USER_REGISTER_VERIFY_URL_CONF = "/register/verify"
+USER_LOGOUT_URL_CONF = "/logout"
+USER_LOGOUT_ALL_URL_CONF = "/logout/all"

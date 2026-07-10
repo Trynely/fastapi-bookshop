@@ -1,0 +1,4 @@
+MAX_INTERACTED_BOOKS_FOR_VECTOR = 50
+VECTOR_FLAG_TTL = 120
+VECTOR_LOCK_TTL = 600 # защита от зависшего воркера
+VECTOR_UPDATE_DELAY = 30  # секунд debounce
