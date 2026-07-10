@@ -21,6 +21,7 @@ from app.support.usecase.close import CloseChatUC
 from app.support.usecase.escalation import ChatEscalationUC
 from app.support.usecase.manager.assign_to_chat import AssignManagerToChatUC
 from app.support.usecase.manager.handle_messages import HandleManagerMessageUC
+from app.support.usecase.manager.leave_chat import ManagerLeaveChatUC
 from app.support.usecase.query_handlers.filter import ChatFilterQH
 from app.support.usecase.query_handlers.manager.filter import ManagerFilterQH
 from app.support.usecase.query_handlers.messages.filter import ChatMessagesFilterQH
@@ -166,6 +167,21 @@ class ManagerProvider(Provider):
             manager_repository=manager_repository,
         )
     
+    @provide
+    def manager_leave_chat_uc(
+        self,
+        transaction: SQLAlchemyTransaction,
+        redis_keyspace: RedisClient,
+        redis_pubsub: RedisPubsub,
+        chat_repository: ChatSQLAlchemyRepository,
+    ) -> ManagerLeaveChatUC:
+        return ManagerLeaveChatUC(
+            transaction=transaction,
+            redis_keyspace=redis_keyspace,
+            redis_pubsub=redis_pubsub,
+            chat_repository=chat_repository,
+        )
+
     @provide
     def handle_manager_message_uc(
         self,

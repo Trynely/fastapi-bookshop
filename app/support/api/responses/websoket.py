@@ -13,3 +13,4 @@ class WSMessageTypeEnum(str, Enum):
 
 class WSMessageActionEnum(str, Enum):
     CLOSE = "close"
+    LEAVE = "leave"
