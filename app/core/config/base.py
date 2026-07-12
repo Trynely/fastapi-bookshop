@@ -156,7 +156,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     env = os.getenv("FASTAPI__ENV", "dev")
     env_file_map = {
-        "dev": ".env.dev",
+        "dev": ".env",
         "prod": ".env.prod",
         "test": ".env.test",
         "ci": ".env.ci",
