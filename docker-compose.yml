@@ -1,20 +1,25 @@
 # Выносим общие настройки в якорь (extension field)
 x-app-base: &app-base
+  # общий тег: без него compose собирает и тегает один и тот же образ
+  # отдельно для каждого сервиса
+  image: bookshop:dev
   build:
     context: .
     dockerfile: Dockerfile
-  restart: always
+  restart: unless-stopped
   env_file:
     - .env
-  environment:
-    - PYTHONPATH=/app
   # host.docker.internal есть из коробки только в Docker Desktop;
   # в docker-ce (WSL) имя нужно объявить вручную
   extra_hosts:
     - "host.docker.internal:host-gateway"
+  # Монтируем только код, а не весь проект: /app/.venv остаётся из образа,
+  # поэтому не нужны тома-заглушки, которые протухают при смене зависимостей
   volumes:
-    - .:/app
-    - venv_data:/app/.venv
+    - ./app:/app/app
+    - ./alembic:/app/alembic
+    - ./alembic.ini:/app/alembic.ini:ro
+    - ./tests:/app/tests
   depends_on:
     # clickhouse:
     #   condition: service_healthy
@@ -36,8 +41,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
-      - /app/.venv
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./tests:/app/tests
       - ./cert:/cert:ro
     # poetry run больше не нужен, т.к. .venv добавлен в PATH в Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -62,7 +69,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redis
-    restart: always
+    restart: unless-stopped
     command: redis-server --notify-keyspace-events Ex
 
   rabbitmq:
@@ -70,10 +77,11 @@ services:
       context: ./app/shared/service/infrastructure/rabbitmq
       dockerfile: Dockerfile
     container_name: rabbitmq
-    restart: always
+    restart: unless-stopped
+    # 127.0.0.1: порты не светятся в LAN и не конфликтуют с чужими сервисами
     ports:
-      - "15672:15672"
-      - "5672:5672"
+      - "127.0.0.1:15672:15672"
+      - "127.0.0.1:5672:5672"
     environment:
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit disk_free_limit 2147483648"
     healthcheck:
@@ -85,17 +93,17 @@ services:
   postgres:
     image: postgres:17.6
     container_name: postgres
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-bookshop}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-bookshop}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -121,13 +129,13 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.0
     container_name: elasticsearch
-    restart: always
+    restart: unless-stopped
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     healthcheck:
@@ -137,12 +145,14 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:latest
+    # тег запинен (latest на разных машинах даёт разные версии),
+    # v1.17 соответствует qdrant-client ^1.17 из pyproject
+    image: qdrant/qdrant:v1.17.0
     container_name: qdrant
-    restart: always
+    restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
 
@@ -203,5 +213,4 @@ volumes:
   postgres_data:
   elasticsearch_data:
   qdrant_data:
-  ollama_data:
-  venv_data:
+  # ollama_data:  # вернуть вместе с сервисом ollama

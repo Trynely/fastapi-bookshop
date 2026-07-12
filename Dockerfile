@@ -1,6 +1,7 @@
 FROM python:3.13-slim AS builder
 
 ENV POETRY_HOME="/opt/poetry" \
+    POETRY_VERSION=2.3.3 \
     POETRY_NO_INTERACTION=1 \
     POETRY_VIRTUALENVS_IN_PROJECT=1 \
     POETRY_VIRTUALENVS_CREATE=1 \
@@ -16,7 +17,9 @@ RUN curl -sSL https://install.python-poetry.org | python3 -
 WORKDIR /app
 
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --no-root --no-ansi
+# cache mount: при изменении poetry.lock перекачиваются только новые пакеты
+RUN --mount=type=cache,target=/root/.cache/pypoetry \
+    poetry install --no-root --no-ansi
 
 FROM python:3.13-slim
 
@@ -30,10 +33,10 @@ WORKDIR /app
 RUN groupadd -r appgroup \
     && useradd -r -g appgroup appuser
 
-COPY --from=builder /app/.venv /app/.venv
-COPY . .
+# chown прямо в COPY: отдельный RUN chown -R дублировал бы все файлы в новый слой
+COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
+COPY --chown=appuser:appgroup . .
 
-RUN chown -R appuser:appgroup /app
 USER appuser
 EXPOSE 8000
 

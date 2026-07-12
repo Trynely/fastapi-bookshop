@@ -5,16 +5,15 @@ services:
       - .env.ci
     volumes:
       - ./cert:/cert:ro
-    environment:
-      PYTHONPATH: /app
-    command: poetry run pytest
+    # без poetry: его нет в финальном образе, .venv/bin уже в PATH
+    command: pytest
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
 
   postgres:
     image: postgres:17.6
@@ -38,5 +37,14 @@ services:
       timeout: 3s
       retries: 10
 
+  # тот же образ, что и в dev: rabbitmq 4.2 + delayed-message-плагин,
+  # иначе CI тестирует другой брокер
   rabbitmq:
-    image: rabbitmq:3
+    build:
+      context: ./app/shared/service/infrastructure/rabbitmq
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
