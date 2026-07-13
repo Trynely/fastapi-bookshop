@@ -15,12 +15,8 @@
         </div>
     </div>
 
-    <section id="similar-section" hidden>
-        <h2 class="section-title">📖 Похожие книги</h2>
-        <div class="book-grid" id="similar-grid"></div>
-        <div class="scroll-sentinel" id="similar-more"></div>
-    </section>
-
+    {# Отзывы выше похожих: у похожих бесконечная подгрузка, ниже неё
+       ничего кликабельного стоять не должно — до него не долистать #}
     <section id="reviews-section">
         <h2 class="section-title">⭐ Отзывы</h2>
 
@@ -44,6 +40,12 @@
 
         <div id="reviews-list"></div>
         <nav class="pagination" id="reviews-pagination" aria-label="Страницы отзывов"></nav>
+    </section>
+
+    <section id="similar-section" hidden>
+        <h2 class="section-title">📖 Похожие книги</h2>
+        <div class="book-grid" id="similar-grid"></div>
+        <div class="scroll-sentinel" id="similar-more"></div>
     </section>
 </div>
 {% endblock %}
@@ -89,6 +91,7 @@
             <div data-book-id="${book.id}" style="display:flex;gap:.6rem;margin-bottom:1.25rem;flex-wrap:wrap;">
                 <button class="btn" data-cart-btn onclick="addToCart(${book.id})" ${book.is_available ? "" : "disabled"}>🧺 В корзину</button>
                 <button class="btn btn-outline" data-wish-btn data-full onclick="addToWishlist(${book.id})">❤️ В избранное</button>
+                <button class="btn btn-outline" id="write-review-btn">✍️ Оставить отзыв</button>
                 ${book.is_available ? '<span class="badge badge-success" style="align-self:center;">В наличии</span>' : '<span class="badge badge-warn" style="align-self:center;">Нет в наличии</span>'}
             </div>
 
@@ -105,28 +108,11 @@
         </div>
     </div>`;
 
-    /* ---------- похожие: random cursor (md5 + seed) ---------- */
-    const similarGrid = document.getElementById("similar-grid");
-    const similarPager = createCursorPager({
-        sentinel: document.getElementById("similar-more"),
-        async fetchPage(cursor) {
-            const params = new URLSearchParams({
-                category_id: book.category.id,
-                author_id: book.author.id,
-                seed: getSeed(`similar_seed_${slug}`),
-            });
-            if (cursor) params.set("md5_cursor", cursor);
-            const data = await apiFetch(`/books/${encodeURIComponent(slug)}/similar?${params}`);
-            return { items: data.books, next: data.next, hasNext: data.has_next };
-        },
-        render(items, isFirst) {
-            if (isFirst) similarGrid.innerHTML = "";
-            if (items.length) document.getElementById("similar-section").hidden = false;
-            similarGrid.insertAdjacentHTML("beforeend",
-                items.filter((b) => b.slug !== slug).map(bookCard).join(""));
-        },
+    document.getElementById("write-review-btn").addEventListener("click", () => {
+        document.getElementById("review-form-card")
+            .scrollIntoView({ behavior: "smooth", block: "center" });
+        document.getElementById("review-comment").focus({ preventScroll: true });
     });
-    try { await similarPager.loadNext(); } catch { /* не критично */ }
 
     /* ---------- отзывы: offset-пагинация ---------- */
     const reviewsList = document.getElementById("reviews-list");
@@ -189,6 +175,29 @@
             toast(e.message, "error");
         }
     });
+
+    /* ---------- похожие: random cursor (md5 + seed) ---------- */
+    const similarGrid = document.getElementById("similar-grid");
+    const similarPager = createCursorPager({
+        sentinel: document.getElementById("similar-more"),
+        async fetchPage(cursor) {
+            const params = new URLSearchParams({
+                category_id: book.category.id,
+                author_id: book.author.id,
+                seed: getSeed(`similar_seed_${slug}`),
+            });
+            if (cursor) params.set("md5_cursor", cursor);
+            const data = await apiFetch(`/books/${encodeURIComponent(slug)}/similar?${params}`);
+            return { items: data.books, next: data.next, hasNext: data.has_next };
+        },
+        render(items, isFirst) {
+            if (isFirst) similarGrid.innerHTML = "";
+            if (items.length) document.getElementById("similar-section").hidden = false;
+            similarGrid.insertAdjacentHTML("beforeend",
+                items.filter((b) => b.slug !== slug).map(bookCard).join(""));
+        },
+    });
+    try { await similarPager.loadNext(); } catch { /* не критично */ }
 })();
 </script>
 {% endblock %}
