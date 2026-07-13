@@ -1,3 +1,4 @@
+from app.core.config.support.redis.cache.user_schat import user_chat_cache_key
 from app.core.config.support.redis.pubsub import schat_channel
 from app.shared.service.infrastructure.base import is_exists
 from app.shared.db.postgres.repositories.sqlalchemy.transaction import SQLAlchemyTransaction
@@ -15,11 +16,13 @@ from app.support.services.manager.check_reassign import check_same_manager
 class AssignManagerToChatUC:
     def __init__(self,
         transaction: SQLAlchemyTransaction,
+        redis_keyspace: RedisClient,
         redis_pubsub: RedisPubsub,
         chat_repository: ChatSQLAlchemyRepository,
         manager_repository: ManagerSQLAlchemyRepository,
     ):
         self._transaction = transaction
+        self.redis_keyspace = redis_keyspace
         self.redis_pubsub = redis_pubsub
         self.chat_repository = chat_repository
         self.manager_repository = manager_repository
@@ -46,6 +49,9 @@ class AssignManagerToChatUC:
         if chat_has_no_manager(chat):
             assign_manager_to_chat(chat=chat, manager_id=manager_id)
             await self._transaction.commit()
+
+            # у пользователя закэширован чат без менеджера — сбрасываем
+            await self.redis_keyspace.key.remove(user_chat_cache_key(chat.user_id))
 
             await self._send_redis_event(
                 chat_id=chat_id,

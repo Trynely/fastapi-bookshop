@@ -44,7 +44,7 @@ class ChatProvider(Provider):
         return ChatFilterQH(chat_repository=chat_repository)
     
     @provide
-    def chat_action_usecase(
+    def close_chat_usecase(
         self,
         transaction: SQLAlchemyTransaction,
         redis_keyspace: RedisClient,
@@ -156,12 +156,14 @@ class ManagerProvider(Provider):
     def assign_manager_to_chat_uc(
         self,
         transaction: SQLAlchemyTransaction,
+        redis_keyspace: RedisClient,
         redis_pubsub: RedisPubsub,
         chat_repository: ChatSQLAlchemyRepository,
         manager_repository: ManagerSQLAlchemyRepository,
     ) -> AssignManagerToChatUC:
         return AssignManagerToChatUC(
             chat_repository=chat_repository,
+            redis_keyspace=redis_keyspace,
             redis_pubsub=redis_pubsub,
             transaction=transaction,
             manager_repository=manager_repository,
