@@ -15,4 +15,4 @@ from app.order.db.models.order import (
 )
 from app.order.db.models.wishlist import WishlistModel
 from app.order.db.models.cart import CartModel, CartItemModel
-from app.support.models import ChatModel, ChatMessageModel
+from app.support.models import ChatModel, ChatMessageModel, ReplyTemplateModel

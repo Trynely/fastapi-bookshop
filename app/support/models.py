@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    String,
     Text,
     CheckConstraint,
     text,
@@ -109,6 +110,23 @@ Index(
     ChatModel.manager_id,
     ChatModel.last_message_at
 )
+
+
+class ReplyTemplateModel(Base, IDMixin, TimestampMixin):
+    """Шаблон быстрого ответа менеджера поддержки. Общий для всех менеджеров."""
+
+    __tablename__ = "support_reply_templates"
+
+    title: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        unique=True,
+    )
+
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
 
 
 class ChatMessageModel(Base, IDMixin, TimestampMixin):

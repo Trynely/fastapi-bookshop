@@ -506,6 +506,7 @@ img { max-width: 100%; display: block; }
 .msg-sender { font-size: .7rem; font-weight: 700; opacity: .7; margin-bottom: .15rem; }
 
 .chat-input-row {
+    position: relative;
     display: flex;
     gap: .6rem;
     padding: .8rem 1rem;
@@ -530,6 +531,67 @@ img { max-width: 100%; display: block; }
 
 .chat-list-item:hover { border-color: var(--primary); }
 .chat-list-item.active { border-color: var(--primary); background: var(--primary-soft); }
+
+/* ---------- reply templates ---------- */
+.tpl-panel {
+    position: absolute;
+    bottom: calc(100% + .5rem);
+    left: .75rem;
+    right: .75rem;
+    max-height: 340px;
+    display: flex;
+    flex-direction: column;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    z-index: 20;
+}
+
+.tpl-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .55rem .9rem;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    font-size: .85rem;
+}
+
+.tpl-list { overflow-y: auto; padding: .4rem; }
+
+.tpl-item {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+    padding: .55rem .6rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.tpl-item:hover { background: var(--primary-soft); }
+.tpl-item-body { flex: 1; min-width: 0; }
+.tpl-item-title { font-weight: 600; font-size: .85rem; }
+
+.tpl-item-preview {
+    font-size: .78rem;
+    color: var(--muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.tpl-del { flex-shrink: 0; color: var(--muted); }
+.tpl-del:hover { color: var(--danger); }
+
+.tpl-form {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    padding: .6rem;
+    border-top: 1px solid var(--border);
+}
 
 /* ---------- states & misc ---------- */
 .empty-state {

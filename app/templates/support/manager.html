@@ -24,7 +24,20 @@
                 <div class="empty-state"><div class="icon">👈</div><p>Выберите чат из списка</p></div>
             </div>
             <div class="chat-input-row">
+                <div class="tpl-panel" id="tpl-panel" hidden>
+                    <div class="tpl-head">
+                        <span>📋 Шаблоны ответов</span>
+                        <button class="btn btn-ghost btn-sm" id="tpl-add-toggle">➕ Новый</button>
+                    </div>
+                    <div class="tpl-list" id="tpl-list"></div>
+                    <form class="tpl-form" id="tpl-form" hidden>
+                        <input class="form-input" id="tpl-title" placeholder="Название шаблона" maxlength="120" required>
+                        <textarea class="form-textarea" id="tpl-content" placeholder="Текст ответа клиенту…" rows="3" maxlength="2000" required></textarea>
+                        <button class="btn btn-sm" type="submit">Сохранить шаблон</button>
+                    </form>
+                </div>
                 <button class="btn btn-outline" id="btn-assign" hidden>Взять в работу</button>
+                <button class="btn btn-ghost" id="btn-templates" title="Шаблоны ответов">📋</button>
                 <input class="form-input" id="chat-input" placeholder="Ответ клиенту…" disabled>
                 <button class="btn" id="chat-send" disabled>Отправить</button>
                 <button class="btn btn-danger" id="btn-close" hidden>Закрыть</button>
@@ -177,6 +190,98 @@
 
     sendBtn.addEventListener("click", send);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+
+    /* ---------- шаблоны ответов ---------- */
+    const tplPanel = document.getElementById("tpl-panel");
+    const tplList = document.getElementById("tpl-list");
+    const tplForm = document.getElementById("tpl-form");
+    const tplBtn = document.getElementById("btn-templates");
+
+    let templates = null; // null — ещё не загружали
+
+    function renderTemplates() {
+        if (!templates.length) {
+            tplList.innerHTML = emptyState("📭", "Шаблонов пока нет");
+            return;
+        }
+        tplList.innerHTML = templates.map((t) => `
+            <div class="tpl-item" data-id="${t.id}">
+                <div class="tpl-item-body">
+                    <div class="tpl-item-title">${esc(t.title)}</div>
+                    <div class="tpl-item-preview">${esc(t.content)}</div>
+                </div>
+                <button class="btn btn-ghost btn-sm tpl-del" title="Удалить шаблон">✕</button>
+            </div>`).join("");
+
+        tplList.querySelectorAll(".tpl-item").forEach((item) => {
+            const tpl = templates.find((t) => t.id === Number(item.dataset.id));
+
+            item.addEventListener("click", (e) => {
+                if (e.target.closest(".tpl-del")) return;
+                if (input.disabled) { toast("Сначала откройте чат", "error"); return; }
+                input.value = tpl.content;
+                tplPanel.hidden = true;
+                input.focus();
+            });
+
+            item.querySelector(".tpl-del").addEventListener("click", async () => {
+                if (!confirm(`Удалить шаблон «${tpl.title}»?`)) return;
+                try {
+                    await apiFetch(`/support/manager/templates/${tpl.id}`, { method: "DELETE" });
+                    templates = templates.filter((t) => t.id !== tpl.id);
+                    renderTemplates();
+                    toast("Шаблон удалён", "success");
+                } catch (e) { toast(e.message, "error"); }
+            });
+        });
+    }
+
+    async function loadTemplates() {
+        tplList.innerHTML = '<div class="skeleton" style="height:3rem;margin:.35rem;"></div>'.repeat(3);
+        try {
+            templates = await apiFetch("/support/manager/templates");
+            renderTemplates();
+        } catch (e) {
+            templates = null;
+            tplList.innerHTML = emptyState("😕", e.message);
+        }
+    }
+
+    tplBtn.addEventListener("click", () => {
+        tplPanel.hidden = !tplPanel.hidden;
+        if (!tplPanel.hidden && templates === null) loadTemplates();
+    });
+
+    document.getElementById("tpl-add-toggle").addEventListener("click", () => {
+        tplForm.hidden = !tplForm.hidden;
+        if (!tplForm.hidden) document.getElementById("tpl-title").focus();
+    });
+
+    tplForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const title = document.getElementById("tpl-title").value.trim();
+        const content = document.getElementById("tpl-content").value.trim();
+        if (!title || !content) return;
+        try {
+            const created = await apiFetch("/support/manager/templates", {
+                method: "POST",
+                json: { title, content },
+            });
+            templates = [...(templates ?? []), created]
+                .sort((a, b) => a.title.localeCompare(b.title, "ru"));
+            renderTemplates();
+            tplForm.reset();
+            tplForm.hidden = true;
+            toast("Шаблон сохранён", "success");
+        } catch (err) { toast(err.message, "error"); }
+    });
+
+    // клик вне панели закрывает её
+    document.addEventListener("click", (e) => {
+        if (!tplPanel.hidden && !e.target.closest("#tpl-panel, #btn-templates")) {
+            tplPanel.hidden = true;
+        }
+    });
 
     assignBtn.addEventListener("click", async () => {
         if (!currentChat) return;

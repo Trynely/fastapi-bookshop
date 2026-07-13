@@ -21,6 +21,11 @@ from app.shared.service.infrastructure.base import json_to_dict, to_json
 from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
 from app.support.api.responses.chat import ChatMessageRead, ChatRead
+from app.support.api.responses.templates import (
+    ReplyTemplateCreate,
+    ReplyTemplateRead,
+    ReplyTemplateUpdate,
+)
 from app.support.api.responses.websoket import WSMessageActionEnum, WSMessageKeysEnum, WSMessageTypeEnum
 from app.support.exceptions.chat import ChatNotFound
 from app.support.exceptions.manager import (
@@ -30,7 +35,7 @@ from app.support.exceptions.manager import (
     ManagerNotFound,
 )
 from app.support.exceptions.message import SChatUserMuted, TooManySChatMessages
-from app.support.service import ManagerChatService
+from app.support.service import ManagerChatService, ManagerReplyTemplateService
 from app.support.usecase.close import CloseChatUC
 from app.support.usecase.escalation import ChatEscalationUC
 from app.support.usecase.manager.assign_to_chat import AssignManagerToChatUC
@@ -417,6 +422,76 @@ async def close_chat(
     })
 
     return chat
+
+
+@support_router.get(
+    "/manager/templates",
+    response_model=list[ReplyTemplateRead],
+)
+async def get_reply_templates(
+    payload: UserAuthorizedREQT = Depends(auth_user),
+    db: AsyncSession = Depends(db_helper.session_getter),
+):
+    user = await get_manager_or_error(db, payload)
+
+    return await ManagerReplyTemplateService.get_templates(db=db, manager=user)
+
+
+@support_router.post(
+    "/manager/templates",
+    response_model=ReplyTemplateRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_reply_template(
+    body: ReplyTemplateCreate,
+    payload: UserAuthorizedREQT = Depends(auth_user),
+    db: AsyncSession = Depends(db_helper.session_getter),
+):
+    user = await get_manager_or_error(db, payload)
+
+    return await ManagerReplyTemplateService.create_template(
+        db=db,
+        manager=user,
+        data=body,
+    )
+
+
+@support_router.patch(
+    "/manager/templates/{template_id}",
+    response_model=ReplyTemplateRead,
+)
+async def update_reply_template(
+    template_id: int,
+    body: ReplyTemplateUpdate,
+    payload: UserAuthorizedREQT = Depends(auth_user),
+    db: AsyncSession = Depends(db_helper.session_getter),
+):
+    user = await get_manager_or_error(db, payload)
+
+    return await ManagerReplyTemplateService.update_template(
+        db=db,
+        manager=user,
+        template_id=template_id,
+        data=body,
+    )
+
+
+@support_router.delete(
+    "/manager/templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_reply_template(
+    template_id: int,
+    payload: UserAuthorizedREQT = Depends(auth_user),
+    db: AsyncSession = Depends(db_helper.session_getter),
+):
+    user = await get_manager_or_error(db, payload)
+
+    await ManagerReplyTemplateService.delete_template(
+        db=db,
+        manager=user,
+        template_id=template_id,
+    )
 
 
 @support_router.get(

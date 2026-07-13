@@ -1,9 +1,11 @@
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.client.db.postgres.models import ClientModel, ClientRoleENUM
-from app.support.models import ChatMessageModel, ChatModel
+from app.support.api.responses.templates import ReplyTemplateCreate, ReplyTemplateUpdate
+from app.support.models import ChatMessageModel, ChatModel, ReplyTemplateModel
 from app.support.services.chat.assign_manager import assign_manager_to_chat
 from app.support.services.chat.close import close_chat
 
@@ -151,3 +153,104 @@ class ManagerChatService:
 
         result = await db.scalars(query)
         return result.all()
+
+
+class ManagerReplyTemplateService:
+    """Шаблоны быстрых ответов: общие для всех менеджеров поддержки."""
+
+    @staticmethod
+    def _ensure_manager(manager: ClientModel) -> None:
+        if manager.role != ClientRoleENUM.MANAGER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden",
+            )
+
+    @staticmethod
+    async def _get_template_or_error(
+        db: AsyncSession,
+        template_id: int,
+    ) -> ReplyTemplateModel:
+        template = await db.get(ReplyTemplateModel, template_id)
+
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Template not found",
+            )
+
+        return template
+
+    @staticmethod
+    async def get_templates(
+        db: AsyncSession,
+        manager: ClientModel,
+    ) -> list[ReplyTemplateModel]:
+        ManagerReplyTemplateService._ensure_manager(manager)
+
+        result = await db.scalars(
+            select(ReplyTemplateModel).order_by(ReplyTemplateModel.title.asc())
+        )
+        return result.all()
+
+    @staticmethod
+    async def create_template(
+        db: AsyncSession,
+        manager: ClientModel,
+        data: ReplyTemplateCreate,
+    ) -> ReplyTemplateModel:
+        ManagerReplyTemplateService._ensure_manager(manager)
+
+        template = ReplyTemplateModel(title=data.title, content=data.content)
+        db.add(template)
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Template with this title already exists",
+            )
+
+        await db.refresh(template)
+        return template
+
+    @staticmethod
+    async def update_template(
+        db: AsyncSession,
+        manager: ClientModel,
+        template_id: int,
+        data: ReplyTemplateUpdate,
+    ) -> ReplyTemplateModel:
+        ManagerReplyTemplateService._ensure_manager(manager)
+
+        template = await ManagerReplyTemplateService._get_template_or_error(db, template_id)
+
+        for field, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
+            setattr(template, field, value)
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Template with this title already exists",
+            )
+
+        await db.refresh(template)
+        return template
+
+    @staticmethod
+    async def delete_template(
+        db: AsyncSession,
+        manager: ClientModel,
+        template_id: int,
+    ) -> None:
+        ManagerReplyTemplateService._ensure_manager(manager)
+
+        template = await ManagerReplyTemplateService._get_template_or_error(db, template_id)
+
+        await db.delete(template)
+        await db.commit()
