@@ -9,13 +9,16 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from app.shared.service.infrastructure.redis.clients import RedisClient
 from qdrant_client.models import ScoredPoint
-from sqlalchemy import Row, and_, func, or_, select
+from sqlalchemy import Row, and_, or_, select
 from app.client.db.qdrant.repositories.user.reco_profile import UserRecoProfileQdrantREPO
 from app.client.dto.user.reco_profile import UserRecoProfileDTO
 from app.client.service.infrastructure.user.reco_profile import UserPersonalBooksRecoProfile
 from app.core.db.postgres import DatabaseHelper
-from app.product.db.postgres.models.book import BookModel, BookPopularityStatsModel
-from app.product.db.postgres.repositories.sqlalchemy.book import BookSQLAlchemyREPO
+from app.product.db.postgres.models.book import BookModel
+from app.product.db.postgres.repositories.sqlalchemy.book import (
+    BookSQLAlchemyREPO,
+    popularity_window_subquery,
+)
 from app.product.db.qdrant.repositories.books import BooksQdrantREPO
 from app.product.exceptions import TooManyRecoFeedSessionsERR
 from app.product.dto.book.main_reco import (
@@ -593,23 +596,21 @@ class BookMainPopularReco:
         cursor: BookMainRecoCursorDTO,
         excluded_ids: list[int],
     ) -> tuple[list[int], tuple[float, int] | None]:
-        # Последняя доступная дата статистики, а не жёстко "вчера" —
-        # если job подсчёта популярности не отработал, источник не пустеет.
-        latest_stat_date = select(
-            func.max(BookPopularityStatsModel.stat_date)
-        ).scalar_subquery()
+        # Скользящее окно популярности (см. popularity_window_subquery):
+        # сумма дневных score за POPULARITY_WINDOW_DAYS дней от последней
+        # доступной даты статистики — общий источник с каталогом.
+        popularity = popularity_window_subquery()
 
         stmt = (
             select(
                 BookModel.id,
-                BookPopularityStatsModel.popularity_score
+                popularity.c.popularity_score,
             ).join(
-                BookPopularityStatsModel,
-                BookPopularityStatsModel.book_id == BookModel.id,
+                popularity,
+                popularity.c.book_id == BookModel.id,
             ).where(
                 BookModel.is_available.is_(True),
-                BookPopularityStatsModel.stat_date == latest_stat_date,
-                BookPopularityStatsModel.popularity_score > 0,
+                popularity.c.popularity_score > 0,
             )
         )
 
@@ -619,16 +620,16 @@ class BookMainPopularReco:
         ):
             stmt = stmt.where(
                 or_(
-                    BookPopularityStatsModel.popularity_score < cursor.popular_last_score,
+                    popularity.c.popularity_score < cursor.popular_last_score,
                     and_(
-                        BookPopularityStatsModel.popularity_score == cursor.popular_last_score,
+                        popularity.c.popularity_score == cursor.popular_last_score,
                         BookModel.id < cursor.popular_last_book_id,
                     ),
                 )
             )
 
         stmt = stmt.order_by(
-            BookPopularityStatsModel.popularity_score.desc(),
+            popularity.c.popularity_score.desc(),
             BookModel.id.desc(),
         ).limit(limit * WIDE_CANDIDATE_MULTIPLIER)
 

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from sqlalchemy import Select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -17,6 +18,39 @@ from app.shared.api.requests.cursor_pagintaion import (
 from app.shared.db.postgres.repositories.sqlalchemy.repository import BaseSQLAlchemyREPO
 from app.shared.dto.cursor_pagination import CursorPaginationDTO
 from app.order.db.models.wishlist import WishlistModel
+
+# Размер скользящего окна "Популярного": суммируем дневные popularity_score
+# за последние N дней. Один всплеск активности держит книгу в выдаче N дней,
+# а тихий день не обнуляет всю подборку (как было с одним "последним" срезом).
+POPULARITY_WINDOW_DAYS = 7
+
+
+def popularity_window_subquery():
+    """
+    (book_id, popularity_score) — сумма дневных score за окно
+    POPULARITY_WINDOW_DAYS дней, включая последнюю доступную дату.
+
+    Окно отсчитывается от max(stat_date), а не от current_date —
+    если job пересчёта простаивал, выдача устаревает, но не пустеет.
+    Общий источник для каталога и главного фида (main_reco.py).
+    """
+    window_start = select(
+        func.max(BookPopularityStatsModel.stat_date)
+        - timedelta(days=POPULARITY_WINDOW_DAYS - 1)
+    ).scalar_subquery()
+
+    return (
+        select(
+            BookPopularityStatsModel.book_id,
+            func.sum(
+                BookPopularityStatsModel.popularity_score
+            ).label("popularity_score"),
+        )
+        .where(BookPopularityStatsModel.stat_date >= window_start)
+        .group_by(BookPopularityStatsModel.book_id)
+        .subquery("popularity_window")
+    )
+
 
 class BookSQLAlchemyREPO(BaseSQLAlchemyREPO[BookModel]):
     def __init__(self, session: AsyncSession):
@@ -48,39 +82,33 @@ class BookSQLAlchemyREPO(BaseSQLAlchemyREPO[BookModel]):
         self,
         pagination: Optional[CursorEncodedPaginationREQT] = None,
     ) -> CursorPaginationDTO:
-        # Последняя доступная дата статистики, а не жёстко "вчера" —
-        # если job пересчёта пропустил день, выдача не пустеет
-        # (симметрично BookMainPopularReco в main_reco.py).
-        latest_stat_date = select(
-            func.max(BookPopularityStatsModel.stat_date)
-        ).scalar_subquery()
+        popularity = popularity_window_subquery()
 
         stmt = (
             select(
                 self.model,
-                BookPopularityStatsModel.popularity_score,
+                popularity.c.popularity_score,
             )
-            # INNER JOIN — намеренно: книги без статистики (новые / без активности)
-            # не попадают в "популярное". Если нужно иначе — outerjoin + coalesce.
+            # INNER JOIN — намеренно: книги без статистики за окно
+            # (новые / без активности) не попадают в "популярное".
+            # Если нужно иначе — outerjoin + coalesce.
             .join(
-                BookPopularityStatsModel,
-                BookPopularityStatsModel.book_id == self.model.id,
+                popularity,
+                popularity.c.book_id == self.model.id,
             )
-            .where(
-                self.model.is_available.is_(True),
-                BookPopularityStatsModel.stat_date == latest_stat_date,
-            )
+            .where(self.model.is_available.is_(True))
             .order_by(
-                BookPopularityStatsModel.popularity_score.desc(),
+                popularity.c.popularity_score.desc(),
                 self.model.id.desc(),
             )
         )
 
         stmt = self._with_relations(stmt)
-        
+
         return await self._paginator.paginate_by_score(
             stmt=stmt,
             cursor=pagination.encoded_cursor if pagination else None,
+            score_column=popularity.c.popularity_score,
         )
 
     async def get_by_slug(self, book_slug: str) -> Optional[BookModel]:

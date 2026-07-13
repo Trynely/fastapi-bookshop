@@ -13,7 +13,7 @@ from typing import (
     Optional,
     Sequence,
 )
-from app.product.db.postgres.models.book import BookModel, BookPopularityStatsModel
+from app.product.db.postgres.models.book import BookModel
 from app.shared.db.postgres.repositories.sqlalchemy.cursor_pagination import BaseSQLAlchemyCursorPaginator
 from app.shared.dto.cursor_pagination import CursorPaginationDTO
 
@@ -28,8 +28,11 @@ class BookSQLAlchemyCursorPaginator(BaseSQLAlchemyCursorPaginator[BookModel]):
         self,
         stmt: Select,
         cursor: Optional[str],
-        score_column = BookPopularityStatsModel.popularity_score,
-        id_column    = BookModel.id,
+        # score_column без дефолта: колонка score приходит из подзапроса
+        # вызывающего кода (см. popularity_window_subquery), дефолт на модель
+        # статистики молча собирал бы запрос без соответствующего join.
+        score_column,
+        id_column = BookModel.id,
     ) -> CursorPaginationDTO:
         if cursor:
             cursor_score, cursor_id = self._decode_cursor(cursor)
