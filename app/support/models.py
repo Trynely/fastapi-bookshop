@@ -83,8 +83,8 @@ class ChatModel(Base, IDMixin, TimestampMixin):
         "ChatMessageModel",
         back_populates="chat",
         cascade="all, delete-orphan",
+        passive_deletes=True,
         order_by="ChatMessageModel.created_at",
-        lazy="selectin",
     )
 
     __table_args__ = (
