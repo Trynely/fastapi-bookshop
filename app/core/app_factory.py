@@ -30,7 +30,6 @@ from app.order.api.routers.pages import order_pages_router
 from app.support.api.chat_router import support_router
 from app.support.api.pages import support_pages_router
 from app.agents.api.router import agent_router
-from app.agents.api.pages import agent_pages_router
 from dishka.integrations.fastapi import setup_dishka
 from app.shared.service.infrastructure.taskiq.broker import taskiq_broker
 
@@ -138,7 +137,6 @@ def setup_routers(app: FastAPI) -> None:
     app.include_router(order_pages_router)
     app.include_router(client_pages_router)
     app.include_router(support_pages_router)
-    app.include_router(agent_pages_router)
 
 
 def setup_middlewares(app: FastAPI) -> None:
