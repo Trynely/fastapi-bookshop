@@ -1,19 +1,27 @@
 import asyncio
 import json
 import uuid
+
 from dishka import AsyncContainer, FromDishka
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from dishka.integrations.fastapi import inject
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.websockets import WebSocketState
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.client.api.dependencies import auth_user, auth_user_ws
 from app.client.api.requests.user.auth import UserAuthorizedREQT
+from app.client.db.postgres.models import ClientModel, ClientRoleENUM
 from app.core.config.shared.redis.pubsub.listen_expired_keys import LISTEN_EXPIRED_KEYS_CHANNEL
-from app.core.config.support.redis.pubsub import schat_channel, schat_user_kick_channel
+from app.core.config.support.redis.cache.user_schat import chat_schat_cache_key, user_chat_cache_key
 from app.core.config.support.redis.keys.schat_active_msg import user_active_msg_chat_key
 from app.core.config.support.redis.keys.schat_manager_lock import SCHAT_MANAGER_LOCK_TTL, schat_manager_lock_key
-from app.shared.service.infrastructure.redis.clients import RedisClient
+from app.core.config.support.redis.pubsub import schat_channel, schat_user_kick_channel
 from app.core.db.postgres import db_helper
 from app.shared.service.infrastructure.base import json_to_dict, to_json
+from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
-from app.support.api.responses.websoket import WSMessageTypeEnum, WSMessageActionEnum, WSMessageKeysEnum
+from app.support.api.responses.chat import ChatMessageRead, ChatRead
+from app.support.api.responses.websoket import WSMessageActionEnum, WSMessageKeysEnum, WSMessageTypeEnum
 from app.support.exceptions.chat import ChatNotFound
 from app.support.exceptions.manager import (
     ManagerAlreadyAssigned,
@@ -22,23 +30,33 @@ from app.support.exceptions.manager import (
     ManagerNotFound,
 )
 from app.support.exceptions.message import SChatUserMuted, TooManySChatMessages
-from app.support.servic import ManagerChatService
+from app.support.service import ManagerChatService
 from app.support.usecase.close import CloseChatUC
 from app.support.usecase.escalation import ChatEscalationUC
 from app.support.usecase.manager.assign_to_chat import AssignManagerToChatUC
 from app.support.usecase.manager.handle_messages import HandleManagerMessageUC
 from app.support.usecase.manager.leave_chat import ManagerLeaveChatUC
 from app.support.usecase.query_handlers.filter import ChatFilterQH
-from app.support.usecase.query_handlers.manager.filter import ManagerFilterQH
 from app.support.usecase.query_handlers.messages.filter import ChatMessagesFilterQH
-from app.client.api.dependencies import auth_user_ws
-from app.client.db.postgres.models import ClientModel, ClientRoleENUM
-from dishka.integrations.fastapi import inject
 
 support_router = APIRouter(prefix="/support", tags=["Support"])
 
+
+def extract_ws_action(raw_text: str) -> str:
+    """Клиент шлёт либо сырой текст (обычное сообщение), либо JSON вида {"action": ...}."""
+    try:
+        payload = json_to_dict(raw_text)
+    except json.JSONDecodeError:
+        return WSMessageTypeEnum.MESSAGE
+
+    if not isinstance(payload, dict):
+        return WSMessageTypeEnum.MESSAGE
+
+    return payload.get(WSMessageKeysEnum.ACTION, WSMessageTypeEnum.MESSAGE)
+
+
 async def write_messages_to_chat(
-    schat_channel: str,
+    chat_channel: str,
     user_kick_channel: str,
     chat_session_id: str,
     chat_active_time_key: str,
@@ -47,7 +65,7 @@ async def write_messages_to_chat(
 ):
     try:
         async for message in redis_pubsub.subscribe(
-            schat_channel,
+            chat_channel,
             user_kick_channel,
             LISTEN_EXPIRED_KEYS_CHANNEL,
         ):
@@ -75,7 +93,7 @@ async def write_messages_to_chat(
             if websocket.client_state != WebSocketState.CONNECTED:
                 break
 
-            if channel == schat_channel:
+            if channel == chat_channel:
                 await websocket.send_text(data)
     except (asyncio.CancelledError, RuntimeError):
         pass
@@ -84,10 +102,10 @@ async def write_messages_to_chat(
 async def write_messages_to_manager_chat(
     redis_pubsub: RedisPubsub,
     websocket: WebSocket,
-    schat_channel: str,
+    chat_channel: str,
 ):
     try:
-        async for message in redis_pubsub.subscribe(schat_channel):
+        async for message in redis_pubsub.subscribe(chat_channel):
             data = message["data"]
 
             if websocket.client_state != WebSocketState.CONNECTED:
@@ -136,7 +154,7 @@ async def support_chat_user_ws(
 
     task = asyncio.create_task(write_messages_to_chat(
         websocket=websocket,
-        schat_channel=schat_channel(chat_id),
+        chat_channel=schat_channel(chat_id),
         user_kick_channel=schat_user_kick_channel(user_id),
         chat_active_time_key=user_active_msg_chat_key(user_id=user_id),
         chat_session_id=chat_session_id,
@@ -146,47 +164,41 @@ async def support_chat_user_ws(
     try:
         while True:
             user_text = await websocket.receive_text()
+            action = extract_ws_action(user_text)
 
             async with container() as request_container:
-                close_chat_uc = await request_container.get(CloseChatUC)
-                chat_escalation_uc = await request_container.get(ChatEscalationUC)
+                if action == WSMessageActionEnum.CLOSE:
+                    close_chat_uc = await request_container.get(CloseChatUC)
 
-            try:
-                payload = json_to_dict(user_text)
-                action = payload.get(WSMessageKeysEnum.ACTION, WSMessageTypeEnum.MESSAGE)
-            except json.JSONDecodeError:
-                action = WSMessageTypeEnum.MESSAGE
+                    try:
+                        await close_chat_uc.by_user(user_id=user_id)
+                    except ChatNotFound:
+                        pass
 
-            if action == WSMessageActionEnum.CLOSE:
-                try:
-                    await close_chat_uc.by_user(user_id=user_id)
-                except ChatNotFound:
-                    await websocket.close(
-                        code=status.WS_1008_POLICY_VIOLATION,
-                        reason="Chat not found",
-                    )
-                await websocket.close()
-                break
-
-            elif action == WSMessageTypeEnum.MESSAGE and user_text:
-                try:
-                    await chat_escalation_uc.handle_user_message(
-                        user_id=user_id,
-                        user_text=user_text,
-                    )
-                except ChatNotFound as err:
-                    await websocket.close(
-                        code=status.WS_1008_POLICY_VIOLATION,
-                        reason=err.msg,
-                    )
+                    await websocket.close()
                     break
-                except (TooManySChatMessages, SChatUserMuted) as err:
-                    await websocket.send_text(
-                        to_json({
-                            WSMessageKeysEnum.TYPE: WSMessageTypeEnum.ERROR,
-                            "data": err.msg,
-                        })
-                    )
+
+                elif action == WSMessageTypeEnum.MESSAGE and user_text:
+                    chat_escalation_uc = await request_container.get(ChatEscalationUC)
+
+                    try:
+                        await chat_escalation_uc.handle_user_message(
+                            user_id=user_id,
+                            user_text=user_text,
+                        )
+                    except ChatNotFound as err:
+                        await websocket.close(
+                            code=status.WS_1008_POLICY_VIOLATION,
+                            reason=err.msg,
+                        )
+                        break
+                    except (TooManySChatMessages, SChatUserMuted) as err:
+                        await websocket.send_text(
+                            to_json({
+                                WSMessageKeysEnum.TYPE: WSMessageTypeEnum.ERROR,
+                                "data": err.msg,
+                            })
+                        )
 
     except WebSocketDisconnect:
         pass
@@ -247,37 +259,29 @@ async def support_chat_manager_ws(
 
         task = asyncio.create_task(write_messages_to_manager_chat(
             websocket=websocket,
-            schat_channel=schat_channel(chat_id),
+            chat_channel=schat_channel(chat_id),
             redis_pubsub=redis_pubsub,
         ))
 
         while True:
             manager_text = await websocket.receive_text()
-
-            try:
-                payload = json_to_dict(manager_text)
-                action = payload.get(WSMessageKeysEnum.ACTION, WSMessageTypeEnum.MESSAGE)
-            except json.JSONDecodeError:
-                action = WSMessageTypeEnum.MESSAGE
+            action = extract_ws_action(manager_text)
 
             async with container() as request_container:
-                close_chat_uc = await request_container.get(CloseChatUC)
-                manager_leave_chat_uc = await request_container.get(ManagerLeaveChatUC)
-                handle_manager_messages_uc = await request_container.get(HandleManagerMessageUC)
-
                 if action == WSMessageActionEnum.CLOSE:
+                    close_chat_uc = await request_container.get(CloseChatUC)
+
                     try:
                         await close_chat_uc.by_manager(chat_id=chat_id)
-                    except ChatNotFound as err:
-                        await websocket.close(
-                            code=status.WS_1008_POLICY_VIOLATION,
-                            reason=err.msg
-                        )
+                    except ChatNotFound:
+                        pass
 
                     await websocket.close()
                     break
 
                 elif action == WSMessageActionEnum.LEAVE:
+                    manager_leave_chat_uc = await request_container.get(ManagerLeaveChatUC)
+
                     try:
                         await manager_leave_chat_uc.execute(
                             manager_id=manager_id,
@@ -288,12 +292,13 @@ async def support_chat_manager_ws(
                             code=status.WS_1008_POLICY_VIOLATION,
                             reason=err.msg,
                         )
-                        break
-
-                    await websocket.close()
+                    else:
+                        await websocket.close()
                     break
 
                 elif action == WSMessageTypeEnum.MESSAGE and manager_text:
+                    handle_manager_messages_uc = await request_container.get(HandleManagerMessageUC)
+
                     try:
                         await handle_manager_messages_uc.execute(
                             chat_id=chat_id,
@@ -322,59 +327,7 @@ async def support_chat_manager_ws(
                 pass
 
 
-from pydantic import BaseModel
-from datetime import datetime
-
-
-class ChatResponse(BaseModel):
-    id: int
-    user_id: int
-    manager_id: int | None
-    is_closed: bool
-    escalation_reason: str | None
-    last_message_at: datetime
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-from pydantic import BaseModel
-from datetime import datetime
-
-
-class MessageResponse(BaseModel):
-    id: int
-    sender: str
-    content: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-from fastapi import Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from app.core.db.postgres import db_helper
-from app.client.api.dependencies import auth_user
-from app.client.db.postgres.models import ClientModel, ClientRoleENUM
-from app.support.models import ChatModel
-
-
-# ----------------------------
-# GET manager chats
-# ----------------------------
-
-@support_router.get(
-    "/manager/chats",
-    response_model=list[ChatResponse],
-)
-async def get_manager_chats(
-    status: str = Query(..., pattern="^(queue|active|closed)$"),
-    payload: UserAuthorizedREQT = Depends(auth_user),
-    db: AsyncSession = Depends(db_helper.session_getter),
-):
-    # 🔥 Загружаем пользователя из БД
+async def get_manager_or_error(db: AsyncSession, payload: UserAuthorizedREQT) -> ClientModel:
     user = await db.get(ClientModel, int(payload.sub))
 
     if not user:
@@ -389,35 +342,39 @@ async def get_manager_chats(
             detail="Only managers allowed",
         )
 
-    chats = await ManagerChatService.get_chats(
-        db=db,
-        manager=user,
-        status_filter=status,
-    )
-
-    return chats
+    return user
 
 
-# ----------------------------
-# ASSIGN chat
-# ----------------------------
-
-@support_router.post(
-    "/manager/chats/{chat_id}/assign",
-    response_model=ChatResponse,
+@support_router.get(
+    "/manager/chats",
+    response_model=list[ChatRead],
 )
-async def assign_chat(
-    chat_id: int,
+async def get_manager_chats(
+    status_filter: str = Query(..., alias="status", pattern="^(queue|active|closed)$"),
     payload: UserAuthorizedREQT = Depends(auth_user),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await db.get(ClientModel, int(payload.sub))
+    user = await get_manager_or_error(db, payload)
 
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    return await ManagerChatService.get_chats(
+        db=db,
+        manager=user,
+        status_filter=status_filter,
+    )
 
-    if user.role != ClientRoleENUM.MANAGER:
-        raise HTTPException(status_code=403, detail="Only managers allowed")
+
+@support_router.post(
+    "/manager/chats/{chat_id}/assign",
+    response_model=ChatRead,
+)
+@inject
+async def assign_chat(
+    chat_id: int,
+    redis_keyspace: FromDishka[RedisClient],
+    payload: UserAuthorizedREQT = Depends(auth_user),
+    db: AsyncSession = Depends(db_helper.session_getter),
+):
+    user = await get_manager_or_error(db, payload)
 
     chat = await ManagerChatService.assign_chat(
         db=db,
@@ -425,29 +382,25 @@ async def assign_chat(
         chat_id=chat_id,
     )
 
+    # у пользователя закэширован чат без менеджера — сбрасываем
+    await redis_keyspace.key.remove(user_chat_cache_key(chat.user_id))
+
     return chat
 
 
-# ----------------------------
-# CLOSE chat
-# ----------------------------
-
 @support_router.post(
     "/manager/chats/{chat_id}/close",
-    response_model=ChatResponse,
+    response_model=ChatRead,
 )
+@inject
 async def close_chat(
     chat_id: int,
+    redis_keyspace: FromDishka[RedisClient],
+    redis_pubsub: FromDishka[RedisPubsub],
     payload: UserAuthorizedREQT = Depends(auth_user),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await db.get(ClientModel, int(payload.sub))
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-
-    if user.role != ClientRoleENUM.MANAGER:
-        raise HTTPException(status_code=403, detail="Only managers allowed")
+    user = await get_manager_or_error(db, payload)
 
     chat = await ManagerChatService.close_chat(
         db=db,
@@ -455,12 +408,20 @@ async def close_chat(
         chat_id=chat_id,
     )
 
+    await redis_keyspace.key.remove(user_chat_cache_key(chat.user_id))
+    await redis_keyspace.key.remove(chat_schat_cache_key(chat.id))
+
+    await redis_pubsub.publish(schat_channel(chat.id), {
+        WSMessageKeysEnum.TYPE: WSMessageTypeEnum.SYSTEM,
+        "data": "chat is closed by manager",
+    })
+
     return chat
 
 
 @support_router.get(
     "/manager/chats/{chat_id}/messages",
-    response_model=list[MessageResponse],
+    response_model=list[ChatMessageRead],
 )
 async def get_chat_history(
     chat_id: int,
@@ -469,21 +430,12 @@ async def get_chat_history(
     payload: UserAuthorizedREQT = Depends(auth_user),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    # 🔥 Загружаем пользователя из БД
-    user = await db.get(ClientModel, int(payload.sub))
+    user = await get_manager_or_error(db, payload)
 
-    if not user:
-        raise HTTPException(401, "User not found")
-
-    if user.role != ClientRoleENUM.MANAGER:
-        raise HTTPException(403, "Only managers allowed")
-
-    messages = await ManagerChatService.get_chat_history(
+    return await ManagerChatService.get_chat_history(
         db=db,
         manager=user,
         chat_id=chat_id,
         limit=limit,
         offset=offset,
     )
-
-    return messages
