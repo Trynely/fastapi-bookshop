@@ -533,6 +533,8 @@ img { max-width: 100%; display: block; }
 .chat-list-item.active { border-color: var(--primary); background: var(--primary-soft); }
 
 /* ---------- reply templates ---------- */
+.tpl-panel[hidden], .tpl-form[hidden] { display: none; }
+
 .tpl-panel {
     position: absolute;
     bottom: calc(100% + .5rem);
