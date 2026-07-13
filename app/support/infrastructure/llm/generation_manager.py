@@ -1,8 +1,4 @@
 import asyncio
-
-active_generation_tasks: dict[int, asyncio.Task] = {}
-
-import asyncio
 from typing import Dict
 
 class LLMGenerationMGR:
@@ -18,6 +14,6 @@ class LLMGenerationMGR:
 
     def cancel_task(self, chat_id: int):
         task = self._tasks.get(chat_id)
-        
+
         if task and not task.done():
             task.cancel()

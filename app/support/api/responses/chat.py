@@ -1,19 +1,8 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-# Повторяем Enum для типизации в схемах
-from enum import Enum
-
-class ChatMessageSender(str, Enum):
-    USER = "user"
-    BOT = "bot"
-    MANAGER = "manager"
-
-class EscalationReason(str, Enum):
-    OPERATOR_REQUEST = "operator_request"
-    COMPLEX_CASE = "complex_case"
-    PROFANITY = "profanity"
+from app.support.models import ChatMessageSender, EscalationReason
 
 # --- Схемы для Сообщений ---
 
