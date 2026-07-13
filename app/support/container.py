@@ -19,9 +19,12 @@ from app.support.db.sqlalchemy.repositories.manager import ManagerSQLAlchemyRepo
 from app.support.usecase.bot_answer import BotAnswerUC
 from app.support.usecase.close import CloseChatUC
 from app.support.usecase.escalation import ChatEscalationUC
+from app.client.service.infrastructure.jwt.generator import JWTGenerator
+from app.client.service.infrastructure.jwt.refresh_session import JWTRefreshAuthSession
 from app.support.usecase.manager.assign_to_chat import AssignManagerToChatUC
 from app.support.usecase.manager.handle_messages import HandleManagerMessageUC
 from app.support.usecase.manager.leave_chat import ManagerLeaveChatUC
+from app.support.usecase.manager.login import ManagerLoginUC
 from app.support.usecase.query_handlers.filter import ChatFilterQH
 from app.support.usecase.query_handlers.manager.filter import ManagerFilterQH
 from app.support.usecase.query_handlers.messages.filter import ChatMessagesFilterQH
@@ -150,6 +153,19 @@ class ManagerProvider(Provider):
     ) -> ManagerFilterQH:
         return ManagerFilterQH(
             manager_repository=manager_repository
+        )
+
+    @provide
+    def manager_login_uc(
+        self,
+        manager_repository: ManagerSQLAlchemyRepository,
+        jwt_refresh_session: JWTRefreshAuthSession,
+        jwt_generator: JWTGenerator,
+    ) -> ManagerLoginUC:
+        return ManagerLoginUC(
+            manager_repository=manager_repository,
+            jwt_refresh_session=jwt_refresh_session,
+            jwt_generator=jwt_generator,
         )
     
     @provide

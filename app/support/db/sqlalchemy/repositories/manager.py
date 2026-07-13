@@ -19,3 +19,12 @@ class ManagerSQLAlchemyRepository(BaseSQLAlchemyREPO[ClientModel]):
 
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_by_email(self, email: str) -> Optional[ClientModel]:
+        stmt = select(ClientModel).where(
+            ClientModel.email == email,
+            ClientModel.role == ClientRoleENUM.MANAGER
+        )
+
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

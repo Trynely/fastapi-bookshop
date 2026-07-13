@@ -39,6 +39,10 @@ class UserAuthenticationUC:
             UserInvalidCredentialsERR(),
         )
 
+        # менеджеры входят только через панель поддержки (/support/manager)
+        if user.role == ClientRoleENUM.MANAGER:
+            raise UserInvalidCredentialsERR()
+
         if is_google_user(user) or not user_check_password(
             client_password=user_data.password,
             hashed_password=user.password,

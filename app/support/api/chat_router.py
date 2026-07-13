@@ -4,13 +4,15 @@ import uuid
 
 from dishka import AsyncContainer, FromDishka
 from dishka.integrations.fastapi import inject
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.websockets import WebSocketState
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.client.api.dependencies import auth_user, auth_user_ws
 from app.client.api.requests.user.auth import UserAuthorizedREQT
+from app.client.api.responses.jwt.access import JwtAccessTokenRESP
 from app.client.db.postgres.models import ClientModel, ClientRoleENUM
+from app.core.config.client.jwt.httponly_cookie import JWT_REFRESH_COOKIE_CONF
 from app.core.config.shared.redis.pubsub.listen_expired_keys import LISTEN_EXPIRED_KEYS_CHANNEL
 from app.core.config.support.redis.cache.user_schat import chat_schat_cache_key, user_chat_cache_key
 from app.core.config.support.redis.keys.schat_active_msg import user_active_msg_chat_key
@@ -20,6 +22,7 @@ from app.core.db.postgres import db_helper
 from app.shared.service.infrastructure.base import json_to_dict, to_json
 from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
+from app.support.api.requests.manager_login import ManagerLoginREQT
 from app.support.api.responses.chat import ChatMessageRead, ChatRead
 from app.support.api.responses.templates import (
     ReplyTemplateCreate,
@@ -41,6 +44,7 @@ from app.support.usecase.escalation import ChatEscalationUC
 from app.support.usecase.manager.assign_to_chat import AssignManagerToChatUC
 from app.support.usecase.manager.handle_messages import HandleManagerMessageUC
 from app.support.usecase.manager.leave_chat import ManagerLeaveChatUC
+from app.support.usecase.manager.login import ManagerLoginUC
 from app.support.usecase.query_handlers.filter import ChatFilterQH
 from app.support.usecase.query_handlers.messages.filter import ChatMessagesFilterQH
 
@@ -348,6 +352,23 @@ async def get_manager_or_error(db: AsyncSession, payload: UserAuthorizedREQT) ->
         )
 
     return user
+
+
+@support_router.post(
+    "/manager/login",
+    response_model=JwtAccessTokenRESP,
+    summary="Вход Менеджера Поддержки",
+)
+@inject
+async def manager_login(
+    body: ManagerLoginREQT,
+    response: Response,
+    manager_login_uc: FromDishka[ManagerLoginUC],
+):
+    jwt = await manager_login_uc.execute(body)
+
+    response.set_cookie(**JWT_REFRESH_COOKIE_CONF, value=jwt.refresh_token)
+    return JwtAccessTokenRESP(access_token=jwt.access_token)
 
 
 @support_router.get(
