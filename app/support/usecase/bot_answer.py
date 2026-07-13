@@ -60,9 +60,10 @@ class BotAnswerUC:
         )
 
         await self.message_repository.save(bot_message)
+        await self.chat_repository.update_last_message_at(chat_id=chat_id)
         await self._transaction.commit()
-        
+
         await self.redis_pubsub.publish(schat_channel(chat_id), {
             WSMessageKeysEnum.TYPE: WSMessageTypeEnum.MESSAGE,
-            "data": {"sender": "bot", "message": answer}
+            "data": {"sender": "bot", "content": answer}
         })
