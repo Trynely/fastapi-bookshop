@@ -81,7 +81,9 @@ class RedisProvider(Provider):
     def get_pubsub(self, redis_connection: redis.Redis) -> RedisPubsub:
         return RedisPubsub(redis_connection)
     
-    @provide(scope=Scope.REQUEST)
+    # APP: стейтлесс-обёртка над app-скоупным соединением; REQUEST ломал
+    # websocket-хендлеры — они живут в Scope.SESSION и не видят дочерний скоуп
+    @provide(scope=Scope.APP)
     def get_redis_connection(self, redis_connection: redis.Redis) -> RedisClient:
         return RedisClient(redis_connection)
 

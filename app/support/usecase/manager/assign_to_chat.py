@@ -59,10 +59,7 @@ class AssignManagerToChatUC:
             )
             return
         
+        # свой чат: тихое переподключение, клиента не уведомляем повторно
         if check_same_manager(chat=chat, manager_id=manager_id):
-            await self._send_redis_event(
-                chat_id=chat_id,
-                manager_name=manager.username,
-            )
             return
         raise ManagerAlreadyAssigned()
