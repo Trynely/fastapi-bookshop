@@ -1,4 +1,5 @@
 from typing import Optional
+from app.core.config.support.rabbitmq.routing_keys import LLM_QUEUE
 from app.core.config.support.redis.cache.user_schat import USER_SCHAT_CACHE_TTL, user_chat_cache_key
 from app.core.config.support.redis.keys.rate_limit_schat import (
     RATE_LIMIT_MSG_SCHAT_MAX,
@@ -15,6 +16,7 @@ from app.core.config.support.redis.keys.schat_active_msg import USER_ACTIVE_MSG_
 from app.shared.service.infrastructure.base import is_exists
 from app.shared.db.redis import redis_cache
 from app.shared.db.postgres.repositories.sqlalchemy.transaction import SQLAlchemyTransaction
+from app.shared.service.infrastructure.rabbitmq.producer import publish_rmq
 from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
 from app.support.api.responses.chat import ChatRead
@@ -23,6 +25,7 @@ from app.support.db.sqlalchemy.repositories.chat import ChatSQLAlchemyRepository
 from app.support.db.sqlalchemy.repositories.chat_messages import ChatMsgSQLAlchemyRepository
 from app.support.exceptions.chat import ChatNotFound
 from app.support.exceptions.message import SChatUserMuted, TooManySChatMessages
+from app.support.dto.events.user_msg import ChatUserMsgEVT
 from app.support.models import ChatMessageModel, ChatMessageSender
 from app.support.services.chat.escalation import chat_is_escalated, detect_chat_escalation
 
@@ -134,10 +137,7 @@ class ChatEscalationUC:
                 "data": "chat has been transferred to the operator"
             })
 
-        # NOTE: ответ бота отключён — событие в LLM_QUEUE не публикуется,
-        # хотя consumer (llm_bot_answer) и BotAnswerUC готовы.
-        # Для включения: опубликовать ChatUserMsgEVT(chat_id=chat.id, message=user_text)
-        # через publish_message_rmq(routing_key=LLM_QUEUE).
-        # if not chat_is_escalated(chat) and not chat.manager_id:
-        #     event = ChatUserMsgEVT(chat_id=chat.id, message=user_text)
-        #     await publish_message_rmq(event=event, routing_key=LLM_QUEUE)
+        # бот отвечает только пока чат не передан оператору
+        if not chat_is_escalated(chat) and not chat.manager_id:
+            event = ChatUserMsgEVT(chat_id=chat.id, message=user_text)
+            await publish_rmq(event=event, routing_key=LLM_QUEUE)

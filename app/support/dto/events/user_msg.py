@@ -1,7 +1,7 @@
-from dataclasses import dataclass
-from typing import Optional
+from pydantic import BaseModel
 
-@dataclass(frozen=True)
-class ChatUserMsgEVT:
+class ChatUserMsgEVT(BaseModel):
+    model_config = {"frozen": True}
+
     chat_id: int
     message: str

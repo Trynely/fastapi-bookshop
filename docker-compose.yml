@@ -49,17 +49,21 @@ services:
     # poetry run больше не нужен, т.к. .venv добавлен в PATH в Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # llm_consumer:
-  #   <<: *app-base
-  #   container_name: llm_consumer
-  #   command: python -m app.support.infrastructure.rabbitmq.consumers.llm_bot_answer
-  #   depends_on:
-  #     rabbitmq:
-  #       condition: service_healthy
-  #     ollama:
-  #       condition: service_started
-  #     qdrant:
-  #       condition: service_started
+  llm_consumer:
+    <<: *app-base
+    container_name: llm_consumer
+    command: python -m app.support.infrastructure.rabbitmq.consumers.llm_bot_answer
+    # ollama сервис-зависимостью не указан: он работает отдельным контейнером
+    # на хосте (host.docker.internal:11434), вне этого compose-файла
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
 
   # book_popularity_consumer:
   #   <<: *app-base

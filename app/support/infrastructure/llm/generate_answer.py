@@ -14,11 +14,16 @@ async def send_to_llm(
     payload = {
         "model": LLM_MODEL,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        # ограничиваем длину ответа: на CPU-инференсе длинная генерация
+        # не укладывается в таймаут
+        "options": {"num_predict": 256},
+        "keep_alive": "30m",
     }
-    
+
     try:
-        timeout = aiohttp.ClientTimeout(total=60)
+        # запас на CPU-инференс и холодную загрузку модели
+        timeout = aiohttp.ClientTimeout(total=300)
         
         async with http_client.post(
             f"{settings.ollama.url}/api/generate",
