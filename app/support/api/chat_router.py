@@ -4,15 +4,15 @@ import uuid
 
 from dishka import AsyncContainer, FromDishka
 from dishka.integrations.fastapi import inject
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.websockets import WebSocketState
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.client.api.dependencies import auth_user, auth_user_ws
-from app.client.api.requests.user.auth import UserAuthorizedREQT
+from app.client.api.dependencies import auth_user_ws
 from app.client.api.responses.jwt.access import JwtAccessTokenRESP
-from app.client.db.postgres.models import ClientModel, ClientRoleENUM
+from app.client.db.postgres.models import ClientModel
 from app.core.config.client.jwt.httponly_cookie import JWT_REFRESH_COOKIE_CONF
+from app.core.config.client.jwt.roles import AUTHORIZED_MANAGER, AUTHORIZED_USER
 from app.core.config.shared.redis.pubsub.listen_expired_keys import LISTEN_EXPIRED_KEYS_CHANNEL
 from app.core.config.support.redis.cache.user_schat import chat_schat_cache_key, user_chat_cache_key
 from app.core.config.support.redis.keys.schat_active_msg import user_active_msg_chat_key
@@ -22,6 +22,7 @@ from app.core.db.postgres import db_helper
 from app.shared.service.infrastructure.base import json_to_dict, to_json
 from app.shared.service.infrastructure.redis.clients import RedisClient
 from app.shared.service.infrastructure.redis.pubsub import RedisPubsub
+from app.support.api.dependencies import get_current_manager
 from app.support.api.requests.manager_login import ManagerLoginREQT
 from app.support.api.responses.chat import ChatMessageRead, ChatRead
 from app.support.api.responses.templates import (
@@ -134,6 +135,13 @@ async def support_chat_user_ws(
 ):
     user = await auth_user_ws(websocket)
 
+    if user.role != AUTHORIZED_USER:
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason="user role required",
+        )
+        return
+
     user_id = int(user.sub)
     chat_session_id = str(uuid.uuid4())
 
@@ -229,6 +237,14 @@ async def support_chat_manager_ws(
     container: FromDishka[AsyncContainer],
 ):
     auth_manager = await auth_user_ws(websocket)
+
+    if auth_manager.role != AUTHORIZED_MANAGER:
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason="manager role required",
+        )
+        return
+
     manager_id = int(auth_manager.sub)
 
     manager_session_id = str(uuid.uuid4())
@@ -336,24 +352,6 @@ async def support_chat_manager_ws(
                 pass
 
 
-async def get_manager_or_error(db: AsyncSession, payload: UserAuthorizedREQT) -> ClientModel:
-    user = await db.get(ClientModel, int(payload.sub))
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
-
-    if user.role != ClientRoleENUM.MANAGER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only managers allowed",
-        )
-
-    return user
-
-
 @support_router.post(
     "/manager/login",
     response_model=JwtAccessTokenRESP,
@@ -377,11 +375,9 @@ async def manager_login(
 )
 async def get_manager_chats(
     status_filter: str = Query(..., alias="status", pattern="^(queue|active|closed)$"),
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     return await ManagerChatService.get_chats(
         db=db,
         manager=user,
@@ -397,11 +393,9 @@ async def get_manager_chats(
 async def assign_chat(
     chat_id: int,
     redis_keyspace: FromDishka[RedisClient],
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     chat = await ManagerChatService.assign_chat(
         db=db,
         manager=user,
@@ -423,11 +417,9 @@ async def close_chat(
     chat_id: int,
     redis_keyspace: FromDishka[RedisClient],
     redis_pubsub: FromDishka[RedisPubsub],
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     chat = await ManagerChatService.close_chat(
         db=db,
         manager=user,
@@ -450,11 +442,9 @@ async def close_chat(
     response_model=list[ReplyTemplateRead],
 )
 async def get_reply_templates(
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     return await ManagerReplyTemplateService.get_templates(db=db, manager=user)
 
 
@@ -465,11 +455,9 @@ async def get_reply_templates(
 )
 async def create_reply_template(
     body: ReplyTemplateCreate,
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     return await ManagerReplyTemplateService.create_template(
         db=db,
         manager=user,
@@ -484,11 +472,9 @@ async def create_reply_template(
 async def update_reply_template(
     template_id: int,
     body: ReplyTemplateUpdate,
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     return await ManagerReplyTemplateService.update_template(
         db=db,
         manager=user,
@@ -503,11 +489,9 @@ async def update_reply_template(
 )
 async def delete_reply_template(
     template_id: int,
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     await ManagerReplyTemplateService.delete_template(
         db=db,
         manager=user,
@@ -523,11 +507,9 @@ async def get_chat_history(
     chat_id: int,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    payload: UserAuthorizedREQT = Depends(auth_user),
+    user: ClientModel = Depends(get_current_manager),
     db: AsyncSession = Depends(db_helper.session_getter),
 ):
-    user = await get_manager_or_error(db, payload)
-
     return await ManagerChatService.get_chat_history(
         db=db,
         manager=user,

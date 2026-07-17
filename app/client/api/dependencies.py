@@ -4,9 +4,11 @@ from fastapi import Depends, Request, WebSocket, status
 from jwt.exceptions import PyJWTError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.client.api.requests.user.auth import UserAuthorizedREQT
+from app.client.exception.jwt.forbidden import JwtRoleForbiddenERR
 from app.client.exception.jwt.invalid import JwtInvalidERR
 from app.client.service.infrastructure.jwt.validate.is_valid_access import is_valid_jwt_access_token
 from app.core.config.base import get_settings
+from app.core.config.client.jwt.roles import AUTHORIZED_MANAGER
 from app.core.config.shared.api.auth_headers import AUTHORIZATION_BEARER_FIELD_CONF, AUTHORIZATION_REQUEST_FIELD_CONF
 from app.client.service.infrastructure.jwt.decode import jwt_decode
 
@@ -20,6 +22,21 @@ def auth_user(
     
     jwt_acces_token_payload = is_valid_jwt_access_token(credentials.credentials)
     return UserAuthorizedREQT.model_validate(asdict(jwt_acces_token_payload))
+
+
+def require_roles(*allowed_roles: str):
+    """Фабрика зависимостей: пускает только токены с ролью из allowed_roles."""
+    def role_checker(
+        user: UserAuthorizedREQT = Depends(auth_user),
+    ) -> UserAuthorizedREQT:
+        if user.role not in allowed_roles:
+            raise JwtRoleForbiddenERR()
+        return user
+
+    return role_checker
+
+
+auth_manager = require_roles(AUTHORIZED_MANAGER)
 
 
 def auth_user_optional(

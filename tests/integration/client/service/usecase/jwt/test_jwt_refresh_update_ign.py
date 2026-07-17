@@ -3,6 +3,7 @@ from app.client.dto.jwt.refresh import JWTRefreshTokenDTO
 from app.client.exception.jwt.replay_detected import JwtRefreshReplayDetectedERR
 from app.core.config.base import get_settings
 from app.core.config.client.jwt.refresh_session_time import jwt_refresh_session_time_conf
+from app.core.config.client.jwt.roles import AUTHORIZED_USER
 from app.client.service.infrastructure.jwt.decode import jwt_decode
 
 settings = get_settings()
@@ -13,8 +14,9 @@ async def test_jwt_refresh_update_success(
     jwt_generator,
     jwt_refresh_session,
     clean_redis,
+    user_db,
 ):
-    user_id = "1"
+    user_id = str(user_db.id)
 
     refresh = jwt_generator.refresh_token(
         JWTRefreshTokenDTO(sub=user_id)
@@ -35,6 +37,7 @@ async def test_jwt_refresh_update_success(
     assert new_access
     assert new_refresh
     assert new_access != refresh
+    assert jwt_decode(new_access).role == AUTHORIZED_USER
 
 
 @pytest.mark.asyncio
@@ -58,8 +61,9 @@ async def test_old_jwt_refresh_removed_after_rotation(
     jwt_refresh_update_usecase,
     jwt_generator,
     jwt_refresh_session,
+    user_db,
 ):
-    user_id = "1"
+    user_id = str(user_db.id)
 
     refresh = jwt_generator.refresh_token(
         JWTRefreshTokenDTO(sub=user_id)
@@ -83,8 +87,9 @@ async def test_jwt_new_refresh_saved_in_session(
     jwt_refresh_update_usecase,
     jwt_generator,
     jwt_refresh_session,
+    user_db,
 ):
-    user_id = "1"
+    user_id = str(user_db.id)
 
     refresh = jwt_generator.refresh_token(
         JWTRefreshTokenDTO(sub=user_id)

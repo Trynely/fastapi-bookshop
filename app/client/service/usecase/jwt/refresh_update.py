@@ -1,9 +1,11 @@
+from app.client.db.postgres.repositories.sqlalchemy import UserSQLAlchemyREPO
 from app.client.dto.jwt.access import JWTAccessTokenDTO
 from app.client.dto.jwt.refresh import JWTRefreshTokenDTO
+from app.client.exception.jwt.invalid import JwtInvalidERR
 from app.client.exception.jwt.replay_detected import JwtRefreshReplayDetectedERR
 from app.client.service.infrastructure.jwt.refresh_session import JWTRefreshAuthSession
 from app.core.config.client.jwt.refresh_session_time import jwt_refresh_session_time_conf
-from app.core.config.client.jwt.roles import AUTHORIZED_USER
+from app.core.config.client.jwt.roles import client_role_to_jwt_role
 from app.client.service.infrastructure.jwt.decode import jwt_decode
 from app.client.service.infrastructure.jwt.generator import JWTGenerator
 
@@ -12,13 +14,15 @@ class JwtRefreshTokenUpdateUC:
         self,
         jwt_refresh_session: JWTRefreshAuthSession,
         jwt_generator: JWTGenerator,
+        user_repository: UserSQLAlchemyREPO,
     ):
         self.jwt_generator = jwt_generator
         self.jwt_refresh_session = jwt_refresh_session
+        self.user_repository = user_repository
 
     def _refresh_token_payload(self, refresh_token: str) -> tuple:
         payload = jwt_decode(refresh_token)
-        
+
         user_id = payload.sub
         jti = payload.jti
 
@@ -31,6 +35,14 @@ class JwtRefreshTokenUpdateUC:
         if not refresh_is_exists:
             await self.jwt_refresh_session.remove_all_user_sessions(user_id)
             raise JwtRefreshReplayDetectedERR()
+
+        # роль не хранится в refresh-токене: берём актуальную из БД,
+        # чтобы менеджер не терял роль, а деактивированный аккаунт — не продлевался
+        user = await self.user_repository.get_by_id(int(user_id))
+
+        if user is None or not user.is_active:
+            await self.jwt_refresh_session.remove_all_user_sessions(user_id)
+            raise JwtInvalidERR()
 
         await self.jwt_refresh_session.remove(
             user_id=user_id,
@@ -51,7 +63,7 @@ class JwtRefreshTokenUpdateUC:
         new_access = self.jwt_generator.access_token(
             JWTAccessTokenDTO(
                 sub=user_id,
-                role=AUTHORIZED_USER,
+                role=client_role_to_jwt_role(user.role),
             )
         )
 

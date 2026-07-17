@@ -110,11 +110,13 @@ class ClientProvider(Provider):
     def jwt_refresh_token_update_uc(
         self,
         jwt_refresh_session: JWTRefreshAuthSession,
-        jwt_generator: JWTGenerator
+        jwt_generator: JWTGenerator,
+        user_repository: UserSQLAlchemyREPO,
     ) -> JwtRefreshTokenUpdateUC:
         return JwtRefreshTokenUpdateUC(
             jwt_generator=jwt_generator,
             jwt_refresh_session=jwt_refresh_session,
+            user_repository=user_repository,
         )
     
     # ----

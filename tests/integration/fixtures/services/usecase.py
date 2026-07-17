@@ -71,8 +71,10 @@ def user_google_authorization_usecase(
 def jwt_refresh_update_usecase(
     jwt_refresh_session,
     jwt_generator,
+    user_repository,
 ):
     return JwtRefreshTokenUpdateUC(
         jwt_refresh_session=jwt_refresh_session,
         jwt_generator=jwt_generator,
+        user_repository=user_repository,
     )
