@@ -15,7 +15,7 @@ from app.order.usecase.cart.add_item import AddBookToCart
 from app.order.usecase.cart.set_quantity import SetCartItemQuantity
 from app.order.usecase.query_handlers.cart.filter import CartFilterQH
 from app.shared.db.postgres.repositories.sqlalchemy.transaction import SQLAlchemyTransaction
-from app.client.api.dependencies import auth_user
+from app.client.api.dependencies import auth_client
 
 cart_router = APIRouter(prefix="/cart", tags=["🧺 Корзина"])
 
@@ -26,7 +26,7 @@ cart_router = APIRouter(prefix="/cart", tags=["🧺 Корзина"])
 )
 async def cart_user_booklist_router(
     session: SessionDependency,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     repo = CartSQLAlchemyRepository(session)
     query = CartFilterQH(cart_repository=repo)
@@ -42,7 +42,7 @@ async def cart_user_booklist_router(
 async def add_item_to_cart_router(
     session: SessionDependency,
     book_id: int,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     cart_book = AddBookToCart(
         transaction=SQLAlchemyTransaction(session),
@@ -75,7 +75,7 @@ async def set_cart_item_quantity_router(
     book_id: int,
     session: SessionDependency,
     quantity: int = Query(ge=0, le=100),
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     """quantity=0 удаляет позицию. Количество проверяется по остатку на складе."""
     set_quantity = SetCartItemQuantity(

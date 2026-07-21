@@ -16,7 +16,7 @@ from app.order.usecase.query_handlers.wishlist.filter import WishlistFilterQH
 from app.order.usecase.wishlist.add_item import AddBookToWishlist
 from app.order.usecase.wishlist.remove_item import RemoveBookFromWishlist
 from app.shared.db.postgres.repositories.sqlalchemy.transaction import SQLAlchemyTransaction
-from app.client.api.dependencies import auth_user
+from app.client.api.dependencies import auth_client
 from app.client.db.postgres.repositories.sqlalchemy import UserSQLAlchemyREPO
 
 wishlist_router = APIRouter(prefix="/wishlist", tags=["❤️ Избранное"])
@@ -28,7 +28,7 @@ wishlist_router = APIRouter(prefix="/wishlist", tags=["❤️ Избранное
 )
 async def wishlist_user_booklist_router(
     session: SessionDependency,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     repo = BookSQLAlchemyREPO(session)
     query = WishlistFilterQH(book_repository=repo)
@@ -43,7 +43,7 @@ async def wishlist_user_booklist_router(
 async def remove_item_from_wishlist_router(
     book_id: int,
     session: SessionDependency,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     wishlist_book = RemoveBookFromWishlist(
         transaction=SQLAlchemyTransaction(session),
@@ -75,7 +75,7 @@ async def remove_item_from_wishlist_router(
 async def add_item_to_wishlist_router(
     session: SessionDependency,
     book_id: int,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     wishlist_book = AddBookToWishlist(
         transaction=SQLAlchemyTransaction(session),

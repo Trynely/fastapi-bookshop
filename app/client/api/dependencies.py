@@ -8,7 +8,7 @@ from app.client.exception.jwt.forbidden import JwtRoleForbiddenERR
 from app.client.exception.jwt.invalid import JwtInvalidERR
 from app.client.service.infrastructure.jwt.validate.is_valid_access import is_valid_jwt_access_token
 from app.core.config.base import get_settings
-from app.core.config.client.jwt.roles import AUTHORIZED_MANAGER
+from app.core.config.client.jwt.roles import AUTHORIZED_MANAGER, AUTHORIZED_USER
 from app.core.config.shared.api.auth_headers import AUTHORIZATION_BEARER_FIELD_CONF, AUTHORIZATION_REQUEST_FIELD_CONF
 from app.client.service.infrastructure.jwt.decode import jwt_decode
 
@@ -17,6 +17,11 @@ security = HTTPBearer(auto_error=False)
 def auth_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> UserAuthorizedREQT:
+    """Любой валидный access-токен, без учёта роли.
+
+    Для витрины (корзина, заказы, отзывы, чат) использовать auth_client:
+    менеджер — служебный аккаунт и покупателем быть не должен.
+    """
     if not credentials:
         raise JwtInvalidERR()
     
@@ -37,11 +42,17 @@ def require_roles(*allowed_roles: str):
 
 
 auth_manager = require_roles(AUTHORIZED_MANAGER)
+auth_client = require_roles(AUTHORIZED_USER)
 
 
 def auth_user_optional(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> UserAuthorizedREQT | None:
+    """Опциональная авторизация покупателя.
+
+    Менеджер здесь приравнивается к анониму: страницы отдаются, но события
+    для персональных рекомендаций от служебного аккаунта не пишутся.
+    """
     if credentials is None:
         return None
 
@@ -49,9 +60,14 @@ def auth_user_optional(
         credentials.credentials
     )
 
-    return UserAuthorizedREQT.model_validate(
+    user = UserAuthorizedREQT.model_validate(
         asdict(jwt_access_token_payload)
     )
+
+    if user.role != AUTHORIZED_USER:
+        return None
+
+    return user
     
 
 async def auth_user_ws(websocket: WebSocket) -> UserAuthorizedREQT:

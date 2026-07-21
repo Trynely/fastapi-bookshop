@@ -9,7 +9,7 @@ from fastapi import (
     Query,
     status,
 )
-from app.client.api.dependencies import auth_user, auth_user_optional
+from app.client.api.dependencies import auth_client, auth_user_optional
 from app.client.api.events.user.personal_reco import UserPersonalRecoEVENT
 from app.client.api.requests.user.auth import UserAuthorizedREQT
 from app.client.db.postgres.models import UserEventENUM
@@ -56,7 +56,7 @@ book_router = APIRouter(
 @inject
 async def get_main_book_recommendations(
     book_recommendations: FromDishka[BooksMainRecommendationsQH],
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
     encoded_cursor: str | None = Query(None, max_length=512),
 ) -> BooksMainRecoRESP:
     page = await book_recommendations.for_user(
@@ -284,7 +284,7 @@ async def run_update_books_popularity():
 )
 async def handle_personalized_reco_event_router(
     event: BookPersonalRecoEVENT,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     user_event = UserPersonalRecoEVENT(
         user_id=user.sub,

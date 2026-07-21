@@ -8,7 +8,7 @@ from fastapi import (
     status,
 )
 
-from app.client.api.dependencies import auth_user
+from app.client.api.dependencies import auth_client
 from app.client.api.requests.user.auth import UserAuthorizedREQT
 from app.client.db.postgres.repositories.sqlalchemy import UserSQLAlchemyREPO
 from app.core.config.base import get_settings
@@ -38,7 +38,7 @@ order_router = APIRouter(prefix="/orders", tags=["⚜ Заказы"])
 async def purchase_books_router(
     data: CreateOrderREQT,
     session: SessionDependency,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     purchase = BuyBooks(
         transaction=SQLAlchemyTransaction(session),
@@ -59,7 +59,7 @@ async def purchase_books_router(
 )
 async def purchase_cart_router(
     session: SessionDependency,
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     buy_books = BuyBooks(
         transaction=SQLAlchemyTransaction(session),

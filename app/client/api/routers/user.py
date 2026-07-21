@@ -3,7 +3,7 @@ from dishka import FromDishka
 from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
-from app.client.api.dependencies import auth_user, get_jwt_refresh_cookie
+from app.client.api.dependencies import get_jwt_refresh_cookie
 from app.client.api.requests.user.auth import UserAuthConfirmREQT
 from app.client.api.requests.user.login import UserLoginREQT
 from app.client.api.responses.jwt.access import JwtAccessTokenRESP

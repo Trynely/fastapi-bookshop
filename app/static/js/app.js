@@ -4,11 +4,37 @@
 "use strict";
 
 const API = document.documentElement.dataset.apiPrefix || "/api";
-const TOKEN_KEY = "access_token";
 
 /* ---------- auth / tokens ---------- */
 
-const getToken = () => localStorage.getItem(TOKEN_KEY);
+/* Витрина и панель менеджера — разные области авторизации: у каждой свой
+   ключ в localStorage и своя роль. Токен менеджера на витрину не попадает. */
+const IS_MANAGER_SCOPE = document.documentElement.dataset.tokenScope === "manager";
+const TOKEN_KEY = IS_MANAGER_SCOPE ? "manager_access_token" : "access_token";
+const SCOPE_ROLE = IS_MANAGER_SCOPE ? "authorized_manager" : "authorized_user";
+
+/** Роль из payload access-токена. Только для UI — подпись проверяет бэкенд. */
+function tokenRole(token) {
+    try {
+        const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+        return JSON.parse(atob(padded)).role ?? null;
+    } catch {
+        return null;
+    }
+}
+
+const isScopeToken = (t) => !!t && tokenRole(t) === SCOPE_ROLE;
+
+/* Токен чужой роли (или выданный до разделения областей) считаем отсутствующим. */
+const getToken = () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token && !isScopeToken(token)) {
+        localStorage.removeItem(TOKEN_KEY);
+        return null;
+    }
+    return token;
+};
 const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
 const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
@@ -20,6 +46,14 @@ async function refreshAccessToken() {
         });
         if (!res.ok) throw new Error("refresh failed");
         const data = await res.json();
+
+        // refresh-cookie у витрины и панели общий: сессия менеджера
+        // не должна авторизовать покупателя, и наоборот
+        if (!isScopeToken(data.access_token)) {
+            clearToken();
+            return null;
+        }
+
         setToken(data.access_token);
         return data.access_token;
     } catch {

@@ -14,7 +14,7 @@ from app.product.api.responses.review.preview import ReviewsPreviewPaginationRES
 from app.product.service.infrastructure.query_handlers.review.filter import BookReviewFilterQH
 from app.product.service.usecase.review.write import WriteReview
 from app.shared.api.requests.offset_pagination import OffsetPagination
-from app.client.api.dependencies import auth_user
+from app.client.api.dependencies import auth_client
 from dishka.integrations.fastapi import inject
 
 book_review_router = APIRouter(prefix="/reviews", tags=["⭐ Отзывы Книг"])
@@ -45,7 +45,7 @@ async def reviews_by_book_router(
 async def write_review_router(
     review_data: ReviewWriteREQT,
     write_review: FromDishka[WriteReview],
-    user: UserAuthorizedREQT = Depends(auth_user),
+    user: UserAuthorizedREQT = Depends(auth_client),
 ):
     await write_review.for_book(
         user=user,
