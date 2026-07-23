@@ -1,9 +1,7 @@
-from datetime import time
 from dishka import FromDishka
-from fastapi import APIRouter, Depends, Query, Response, status
-from pydantic import BaseModel
-from sqlalchemy.orm import selectinload
-from app.client.api.dependencies import get_jwt_refresh_cookie
+from fastapi import APIRouter, Depends, Response, status
+from app.client.api.cookies import clear_auth_cookies, set_auth_cookies
+from app.client.api.dependencies import csrf_protect, get_jwt_refresh_cookie
 from app.client.api.requests.user.auth import UserAuthConfirmREQT
 from app.client.api.requests.user.login import UserLoginREQT
 from app.client.api.responses.jwt.access import JwtAccessTokenRESP
@@ -13,7 +11,6 @@ from app.client.db.qdrant.collections.user_reco_profile import UserRecoProfileQd
 from app.client.service.usecase.user.authentication import UserAuthenticationUC
 from app.client.service.usecase.user.authorization import UserAuthorizationUC
 from app.client.service.usecase.user.logout import UserLogoutUC
-from app.core.config.client.jwt.httponly_cookie import JWT_REFRESH_COOKIE_CONF
 from app.client.api.responses.user.succes_otp_send import succes_otp_sending_to_email_resp
 from app.core.config.client.user.router_urls import USER_BASE_URL_CONF, USER_LOGIN_URL_CONF, USER_LOGIN_VERIFY_URL_CONF, USER_LOGOUT_ALL_URL_CONF, USER_LOGOUT_URL_CONF, USER_REGISTER_URL_CONF, USER_REGISTER_VERIFY_URL_CONF
 
@@ -64,8 +61,8 @@ async def user_login_confirm_router(
     jwt = await user_authorization.login_confirm(
         user_data
     )
-    
-    response.set_cookie(**JWT_REFRESH_COOKIE_CONF, value=jwt.refresh_token)
+
+    set_auth_cookies(response, jwt.refresh_token)
     return JwtAccessTokenRESP(access_token=jwt.access_token)
 
 
@@ -84,7 +81,7 @@ async def user_register_confirm_router(
         user_data
     )
 
-    response.set_cookie(**JWT_REFRESH_COOKIE_CONF, value=jwt.refresh_token)
+    set_auth_cookies(response, jwt.refresh_token)
     return JwtAccessTokenRESP(access_token=jwt.access_token)
 
 
@@ -98,13 +95,11 @@ async def user_logout_router(
     response: Response,
     user_logout: FromDishka[UserLogoutUC],
     refresh_token: str = Depends(get_jwt_refresh_cookie),
+    _: None = Depends(csrf_protect),
 ):
     await user_logout.from_device(refresh_token)
-    
-    response.delete_cookie(
-        key=JWT_REFRESH_COOKIE_CONF["key"],
-        path=JWT_REFRESH_COOKIE_CONF["path"],
-    )
+
+    clear_auth_cookies(response)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -118,13 +113,11 @@ async def user_logout_all_sessions_router(
     response: Response,
     user_logout: FromDishka[UserLogoutUC],
     refresh_token: str = Depends(get_jwt_refresh_cookie),
+    _: None = Depends(csrf_protect),
 ):
     await user_logout.from_all_devices(refresh_token)
-    
-    response.delete_cookie(
-        key=JWT_REFRESH_COOKIE_CONF["key"],
-        path=JWT_REFRESH_COOKIE_CONF["path"],
-    )
+
+    clear_auth_cookies(response)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -4,6 +4,7 @@ import stripe
 from fastapi import (
     APIRouter,
     Depends,
+    HTTPException,
     Request,
     status,
 )
@@ -96,9 +97,17 @@ async def stripe_webhook_router(
             secret=settings.stripe.webhook_secret,
         )
     except (ValueError, json.JSONDecodeError):
-        return {"status": "invalid payload"}
+        # 400: Stripe считает 4xx неуспехом и ретраит доставку.
+        # 200 (как было) прятал бы событие — оно бы не пришло повторно.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid payload",
+        )
     except stripe.error.SignatureVerificationError:
-        return {"status": "invalid signature"}
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid signature",
+        )
 
     if event["type"] == "checkout.session.completed":
         session_data = event["data"]["object"]

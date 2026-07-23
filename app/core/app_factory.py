@@ -11,6 +11,7 @@ from app.core.config.base import get_settings
 from app.core.db.postgres import db_helper as database
 from app.core.db.redis import close_redis
 from app.core.error_handlers import register_error_handlers
+from app.core.health import health_router
 from app.core.model_sync_checker import check_admin_model_sync
 from app.shared.db.elasticsearch.indexes.initializer import ElasticIndexInitializer
 from app.shared.db.qdrant.collections.intializer import QdrantCollectionInitializer
@@ -80,6 +81,9 @@ async def lifespan(app: FastAPI):
 
 def setup_routers(app: FastAPI) -> None:
     settings = get_settings()
+
+    # health/ready — без префикса, чтобы LB/k8s опрашивали /health и /ready
+    app.include_router(health_router)
 
     app.include_router(
         user_router,

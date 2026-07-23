@@ -3,9 +3,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from app.client.api.requests.user.google_oauth import UserOauthREQT
 from dishka.integrations.fastapi import inject
+from app.client.api.cookies import set_auth_cookies
 from app.client.exception.user.oauth import GoogleEmailNotVerifiedERR
 from app.client.service.usecase.ouath.google_authorization import UserGoogleAuthorizationUC
-from app.core.config.client.jwt.httponly_cookie import JWT_REFRESH_COOKIE_CONF
 from app.client.service.infrastructure.oauth.google.base import oauth
 from app.core.config.client.oauth.google_request_callback import GOOGLE_REQUEST_CALLBACK_CONF
 from app.core.config.client.oauth.google_scope import GOOGLE_SCOPE_CONF
@@ -54,8 +54,5 @@ async def google_callback_router(
     jwt_refresh_token = await google.authorize(user_data)
 
     response = RedirectResponse(url="/")
-    response.set_cookie(
-        **JWT_REFRESH_COOKIE_CONF,
-        value=jwt_refresh_token,
-    )
+    set_auth_cookies(response, jwt_refresh_token)
     return response

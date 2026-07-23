@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDis
 from fastapi.websockets import WebSocketState
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.client.api.cookies import set_auth_cookies
 from app.client.api.dependencies import auth_user_ws
 from app.client.api.responses.jwt.access import JwtAccessTokenRESP
 from app.client.db.postgres.models import ClientModel
-from app.core.config.client.jwt.httponly_cookie import JWT_REFRESH_COOKIE_CONF
 from app.core.config.client.jwt.roles import AUTHORIZED_MANAGER, AUTHORIZED_USER
 from app.core.config.shared.redis.pubsub.listen_expired_keys import LISTEN_EXPIRED_KEYS_CHANNEL
 from app.core.config.support.redis.cache.user_schat import chat_schat_cache_key, user_chat_cache_key
@@ -365,7 +365,7 @@ async def manager_login(
 ):
     jwt = await manager_login_uc.execute(body)
 
-    response.set_cookie(**JWT_REFRESH_COOKIE_CONF, value=jwt.refresh_token)
+    set_auth_cookies(response, jwt.refresh_token)
     return JwtAccessTokenRESP(access_token=jwt.access_token)
 
 

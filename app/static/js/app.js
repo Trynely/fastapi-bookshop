@@ -38,11 +38,31 @@ const getToken = () => {
 const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
 const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
+/* CSRF double-submit: бэкенд ставит нечитаемый httponly refresh-cookie и
+   parallel-cookie csrf_token (обычный, читаемый). Значение csrf_token эхом
+   отправляем в заголовке X-CSRF-Token на cookie-эндпоинты (refresh/logout). */
+const CSRF_COOKIE = "csrf_token";
+const CSRF_HEADER = "X-CSRF-Token";
+const UNSAFE_METHODS = ["POST", "PUT", "PATCH", "DELETE"];
+
+function getCookie(name) {
+    const escaped = name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1");
+    const match = document.cookie.match(new RegExp("(?:^|; )" + escaped + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+function csrfHeaders(headers = {}) {
+    const token = getCookie(CSRF_COOKIE);
+    if (token) headers[CSRF_HEADER] = token;
+    return headers;
+}
+
 async function refreshAccessToken() {
     try {
         const res = await fetch(`${API}/users/token/refresh`, {
             method: "POST",
             credentials: "include",
+            headers: csrfHeaders(),
         });
         if (!res.ok) throw new Error("refresh failed");
         const data = await res.json();
@@ -85,6 +105,12 @@ async function apiFetch(path, options = {}, _retry = true) {
 
     const token = getToken();
     if (token) opts.headers["Authorization"] = `Bearer ${token}`;
+
+    // CSRF-заголовок на все изменяющие запросы (для cookie-эндпоинтов —
+    // обязателен, для Bearer-эндпоинтов — безвредный defense-in-depth)
+    if (UNSAFE_METHODS.includes((opts.method || "GET").toUpperCase())) {
+        csrfHeaders(opts.headers);
+    }
 
     const res = await fetch(`${API}${path}`, opts);
 

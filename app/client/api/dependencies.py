@@ -1,11 +1,14 @@
+import hmac
 from dataclasses import asdict
 
 from fastapi import Depends, Request, WebSocket, status
 from jwt.exceptions import PyJWTError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.client.api.requests.user.auth import UserAuthorizedREQT
+from app.client.exception.jwt.csrf import CsrfTokenInvalidERR
 from app.client.exception.jwt.forbidden import JwtRoleForbiddenERR
 from app.client.exception.jwt.invalid import JwtInvalidERR
+from app.core.config.client.jwt.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from app.client.service.infrastructure.jwt.validate.is_valid_access import is_valid_jwt_access_token
 from app.core.config.base import get_settings
 from app.core.config.client.jwt.roles import AUTHORIZED_MANAGER, AUTHORIZED_USER
@@ -89,6 +92,25 @@ async def auth_user_ws(websocket: WebSocket) -> UserAuthorizedREQT:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         raise
     
+
+def csrf_protect(request: Request) -> None:
+    """Double-submit cookie: заголовок X-CSRF-Token обязан совпадать с cookie.
+
+    Защищает cookie-эндпоинты (refresh, logout), которые браузер вызывает
+    по автоматически подставляемой refresh-cookie: кросс-сайт не сможет ни
+    прочитать CSRF-cookie, ни выставить заголовок. Эндпоинты с Bearer-токеном
+    в защите не нуждаются — заголовок Authorization кросс-сайт тоже не ставит.
+    """
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+    header_token = request.headers.get(CSRF_HEADER_NAME)
+
+    if (
+        not cookie_token
+        or not header_token
+        or not hmac.compare_digest(cookie_token, header_token)
+    ):
+        raise CsrfTokenInvalidERR()
+
 
 def get_jwt_refresh_cookie(request: Request) -> str:
     settings = get_settings()
