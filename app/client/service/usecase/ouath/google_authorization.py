@@ -52,7 +52,10 @@ class UserGoogleAuthorizationUC:
                 oauth_provider=OAuthProviderENUM.GOOGLE,
                 oauth_id=user_data.oauth_id,
             )
-            await self.user_repository.save(user)
+            # save() использует session.merge() и возвращает сохранённый ORM-объект.
+            # Именно у него после flush заполнен id; исходный transient-объект
+            # остаётся с id=None и не должен использоваться для JWT subject.
+            user = await self.user_repository.save(user)
             await self._transaction.commit()
 
         user_id = str(user.id)

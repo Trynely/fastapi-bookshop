@@ -57,7 +57,24 @@ function csrfHeaders(headers = {}) {
     return headers;
 }
 
+let accessTokenRefreshPromise = null;
+
 async function refreshAccessToken() {
+    // Refresh-токен ротируется после каждого обмена. Все одновременные
+    // потребители страницы должны ждать один запрос, иначе второй запрос
+    // может быть воспринят сервером как replay старого refresh-токена.
+    if (accessTokenRefreshPromise) return accessTokenRefreshPromise;
+
+    accessTokenRefreshPromise = refreshAccessTokenOnce();
+
+    try {
+        return await accessTokenRefreshPromise;
+    } finally {
+        accessTokenRefreshPromise = null;
+    }
+}
+
+async function refreshAccessTokenOnce() {
     try {
         const res = await fetch(`${API}/users/token/refresh`, {
             method: "POST",
@@ -473,10 +490,14 @@ function renderPagination(container, meta, onPage) {
 
 /* ---------- навигация: состояние авторизации ---------- */
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+    // OAuth callback сохраняет refresh-cookie и перенаправляет на главную.
+    // До отрисовки шапки восстанавливаем access-токен из этой cookie.
+    const token = getToken() || await refreshAccessToken();
+
     const authSlot = document.getElementById("nav-auth");
     if (authSlot) {
-        if (getToken()) {
+        if (token) {
             authSlot.innerHTML = '<button class="btn btn-ghost btn-sm" id="nav-logout">Выйти</button>';
             document.getElementById("nav-logout").addEventListener("click", () => logout());
         } else {

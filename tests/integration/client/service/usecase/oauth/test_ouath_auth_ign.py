@@ -21,6 +21,7 @@ async def test_google_auth_create_new_user(
     assert user is not None
     assert user.oauth_provider == OAuthProviderENUM.GOOGLE
     assert user.oauth_id == user_google_reqt.oauth_id
+    assert payload.sub == str(user.id)
 
     refresh_session_exists = await jwt_refresh_session.is_exists(payload.jti)
 
